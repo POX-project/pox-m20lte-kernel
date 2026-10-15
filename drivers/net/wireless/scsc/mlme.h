@@ -10,6 +10,41 @@
 #include "dev.h"
 #include "mib.h"
 
+#if defined(CONFIG_SCSC_WLAN_SAE_CONFIG) && (LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0))
+/* 4.4 compat shim: Samsung's SAE code was written for >= 4.10 cfg80211
+ * (external-auth offload). This 4.4 tree lacks CONNECT_REQ_EXTERNAL_AUTH
+ * support, struct cfg80211_external_auth_params, .external_auth op and
+ * cfg80211_external_auth_request(). Only software SAE via wpa_supplicant
+ * is supported here: NL80211_FEATURE_SAE is advertised so AKM selection
+ * succeeds and SAE frames flow through the normal authenticate path
+ * (mlme.c already handles NL80211_AUTHTYPE_SAE). Firmware-driven
+ * external-auth indications are stubbed to -EOPNOTSUPP.
+ */
+#include <linux/ieee80211.h>
+
+enum nl80211_external_auth_action {
+	NL80211_EXTERNAL_AUTH_START,
+	NL80211_EXTERNAL_AUTH_ABORT,
+};
+
+struct cfg80211_external_auth_params {
+	enum nl80211_external_auth_action action;
+	u8 bssid[ETH_ALEN];
+	struct cfg80211_ssid ssid;
+	unsigned int key_mgmt_suite;
+	u16 status;
+};
+
+static inline int cfg80211_external_auth_request(struct net_device *dev,
+						 struct cfg80211_external_auth_params *params,
+						 gfp_t gfp)
+{
+	return -EOPNOTSUPP;
+}
+
+#define CONNECT_REQ_EXTERNAL_AUTH_SUPPORT BIT(0)
+#endif
+
 enum slsi_ac_index_wmm_pe {
 	AC_BE,
 	AC_BK,

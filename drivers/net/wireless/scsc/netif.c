@@ -1238,6 +1238,10 @@ int slsi_netif_add_locked(struct slsi_dev *sdev, const char *name, int ifnum)
 	if (slsi_is_rf_test_mode_enabled()) {
 		SLSI_NET_ERR(dev, "*#rf# rf test mode set is enabled.\n");
 		ndev_vif->set_power_mode = FAPI_POWERMANAGEMENTMODE_ACTIVE_MODE;
+#ifdef CONFIG_SCSC_WLAN_MAX_PERF
+	} else if (slsi_wifi_max_perf_enabled()) {
+		ndev_vif->set_power_mode = FAPI_POWERMANAGEMENTMODE_ACTIVE_MODE;
+#endif
 	} else {
 		ndev_vif->set_power_mode = FAPI_POWERMANAGEMENTMODE_POWER_SAVE;
 	}
@@ -1299,8 +1303,13 @@ int slsi_netif_add_locked(struct slsi_dev *sdev, const char *name, int ifnum)
 	skb_queue_head_init(&ndev_vif->napi.rx_data);
 	slsi_spinlock_create(&ndev_vif->napi.lock);
 	ndev_vif->napi.interrupt_enabled = true;
+	/* Wi-Fi 4 max: budget 64 when MAX_PERF (throughput), else 32 (latency). */
+#ifdef CONFIG_SCSC_WLAN_MAX_PERF
+	netif_napi_add(dev, &ndev_vif->napi.napi, slsi_net_rx_poll, 64);
+#else
 	/* TODO_HARDMAC: What weight should we use? 32 is just a Guess */
 	netif_napi_add(dev, &ndev_vif->napi.napi, slsi_net_rx_poll, 32);
+#endif
 	napi_enable(&ndev_vif->napi.napi);
 #endif
 	ndev_vif->delete_probe_req_ies = false;

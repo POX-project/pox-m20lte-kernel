@@ -65,6 +65,25 @@ static char mac_addr_override[] = "ff:ff:ff:ff:ff:ff";
 module_param_string(mac_addr, mac_addr_override, sizeof(mac_addr_override), S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(mac_addr_override, "WLAN MAC address override");
 
+
+/* M20 Wi-Fi 4 max: ignore power, force ACTIVE, HT40/SGI/LDPC/64K.
+ * Kconfig SCSC_WLAN_MAX_PERF sets default; runtime toggle via
+ * /sys/module/scsc_wlan/parameters/wifi_max_perf.
+ */
+static bool wifi_max_perf =
+#ifdef CONFIG_SCSC_WLAN_MAX_PERF
+	true;
+#else
+	false;
+#endif
+module_param(wifi_max_perf, bool, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(wifi_max_perf, "Maximum Wi-Fi 4 throughput (ACTIVE power, HT40, SGI, 64K AMPDU)");
+
+bool slsi_wifi_max_perf_enabled(void)
+{
+	return wifi_max_perf;
+}
+
 static int slsi_mib_open_file(struct slsi_dev *sdev, struct slsi_dev_mib_info *mib_info, const struct firmware **fw);
 static int slsi_mib_close_file(struct slsi_dev *sdev, const struct firmware *e);
 static int slsi_mib_download_file(struct slsi_dev *sdev, struct slsi_dev_mib_info *mib_info);
@@ -1529,6 +1548,8 @@ static int slsi_mib_initial_get(struct slsi_dev *sdev)
 				kfree(supported_channels_buffer);
 #endif
 			}
+
+
 		}
 
 		if (values[++mib_index].type != SLSI_MIB_TYPE_NONE) /* HT enabled? */
@@ -1596,6 +1617,8 @@ static int slsi_mib_initial_get(struct slsi_dev *sdev)
 		} else {
 			SLSI_WARN(sdev, "Error reading 5Ghz Allowed Channels\n");
 		}
+
+
 #endif
 
 #ifdef CONFIG_SCSC_WLAN_AP_INFO_FILE
@@ -1637,6 +1660,7 @@ static int slsi_mib_initial_get(struct slsi_dev *sdev)
 			sdev->fw_SoftAp_2g_40mhz_enabled = values[mib_index].u.boolValue;
 		else
 			SLSI_DBG2(sdev, SLSI_MLME, "40MHz for Soft AP is disabled!\n");
+
 		if (values[++mib_index].type != SLSI_MIB_TYPE_NONE) {
 			sdev->fw_ext_cap_ie_len = values[mib_index].u.octetValue.dataLength;
 			memset(sdev->fw_ext_cap_ie, 0, sizeof(sdev->fw_ext_cap_ie));
@@ -2519,6 +2543,10 @@ void slsi_vif_deactivated(struct slsi_dev *sdev, struct net_device *dev)
 	if (slsi_is_rf_test_mode_enabled()) {
 		SLSI_NET_ERR(dev, "*#rf# rf test mode set is enabled.\n");
 		ndev_vif->set_power_mode = FAPI_POWERMANAGEMENTMODE_ACTIVE_MODE;
+#ifdef CONFIG_SCSC_WLAN_MAX_PERF
+	} else if (slsi_wifi_max_perf_enabled()) {
+		ndev_vif->set_power_mode = FAPI_POWERMANAGEMENTMODE_ACTIVE_MODE;
+#endif
 	} else {
 		ndev_vif->set_power_mode = FAPI_POWERMANAGEMENTMODE_POWER_SAVE;
 	}

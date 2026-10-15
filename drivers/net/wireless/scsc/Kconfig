@@ -210,6 +210,21 @@ config SCSC_WLAN_SINGLE_ANTENNA
 	  This option tells if there is support for single
 	  antenna or dual antenna.
 
+config SCSC_WLAN_MAX_PERF
+	bool "Maximum Wi-Fi throughput (ignore power, force HT40/SGI/ACTIVE)"
+	default n
+	---help---
+	  M20 Wi-Fi 4 (802.11n 1x1) max-throughput mode. Ignores
+	  battery: forces ACTIVE power mode (no PS), keeps HT40/SGI/
+	  LDPC/64K-AMPDU advertised even if FW reports conservative
+	  caps, auto-upgrades 2.4GHz SoftAP to HT40 when regulatory
+	  allows 40MHz, bumps 2.4GHz wiphy max_power 17->20dBm.
+	  NOTE: RX_NAPI stays disabled (stock) because Samsung's
+	  NAPI RX path is incomplete on this branch (stale
+	  slsi_rx_data_process_skb reference, untested). For bench/
+	  max use only; expect heat and BT-coex interference on
+	  2.4GHz HT40. Set to y for M20 Wi-Fi 4 max.
+
 config SCSC_WLAN_ACS_ENABLE
         bool "ACS Support"
         default y

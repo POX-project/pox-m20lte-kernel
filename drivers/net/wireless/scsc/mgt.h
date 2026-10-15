@@ -598,6 +598,9 @@ u8 slsi_bss_connect_type_get(struct slsi_dev *sdev, const u8 *ie, size_t ie_len)
 #endif
 void slsi_reset_channel_flags(struct slsi_dev *sdev);
 
+/* M20 Wi-Fi 4 max: ACTIVE power, HT40, SGI/LDPC/64K. Defined in mgt.c. */
+bool slsi_wifi_max_perf_enabled(void);
+
 /* Sysfs based mac address override */
 void slsi_create_sysfs_macaddr(void);
 void slsi_destroy_sysfs_macaddr(void);

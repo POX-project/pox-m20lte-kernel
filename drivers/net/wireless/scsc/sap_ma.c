@@ -509,7 +509,7 @@ static int slsi_rx_napi_process(struct slsi_dev *sdev, struct sk_buff *skb)
 		/* SKBs in a BA session are not passed yet */
 		if (atomic_read(&ndev_vif->ba_flush)) {
 			atomic_set(&ndev_vif->ba_flush, 0);
-			slsi_ba_process_complete(dev, false);
+			slsi_ba_process_complete(dev);
 		}
 		break;
 	case MA_UNITDATA_CFM:

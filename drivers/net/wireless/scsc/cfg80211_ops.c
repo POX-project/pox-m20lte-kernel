@@ -1573,6 +1573,14 @@ int slsi_set_power_mgmt(struct wiphy *wiphy, struct net_device *dev,
 	int               r = -EINVAL;
 	u16               pwr_mode = enabled ? FAPI_POWERMANAGEMENTMODE_POWER_SAVE : FAPI_POWERMANAGEMENTMODE_ACTIVE_MODE;
 
+	/* Wi-Fi 4 max: ignore userspace PS requests, stay ACTIVE for
+	 * lowest latency / highest throughput. Toggle via
+	 * wifi_max_perf=0 at runtime. */
+	if (slsi_wifi_max_perf_enabled()) {
+		enabled = false;
+		pwr_mode = FAPI_POWERMANAGEMENTMODE_ACTIVE_MODE;
+	}
+
 	SLSI_UNUSED_PARAMETER(timeout);
 	if (slsi_is_test_mode_enabled()) {
 		SLSI_NET_INFO(dev, "Skip sending signal, WlanLite FW does not support MLME_POWERMGT.request\n");
@@ -2333,6 +2341,12 @@ int slsi_start_ap(struct wiphy *wiphy, struct net_device *dev,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 9))
 		SLSI_NET_DBG1(dev, SLSI_MLME, "Channel: %d, Maximum bandwidth: %d\n", ndev_vif->chandef->chan->hw_value,
 			      slsi_get_max_bw_mhz(sdev, ndev_vif->chandef->chan->center_freq));
+	/* Max-perf: never leave cert-test 40/80MHz disables sticky when
+	 * 5GHz is unlocked. /proc/driver/unifi0/disable_ht40|disable_ht80
+	 * (procfs.c) clears these for certification; a normal hotspot
+	 * must get HT40/VHT80 back.
+	 */
+
 	/* 11ac configuration (5GHz and VHT) */
 	if ((ndev_vif->chandef->chan->hw_value >= 36) && (ndev_vif->chandef->chan->hw_value < 165) &&
 	    (sdev->fw_vht_enabled) && sdev->allow_switch_80_mhz &&
@@ -2363,9 +2377,15 @@ int slsi_start_ap(struct wiphy *wiphy, struct net_device *dev,
 												 IEEE80211_BAND_5GHZ);
 		}
 #endif
+	/* Wi-Fi 4 max: stock condition only upgrades 5GHz (>=36) to HT40,
+	 * leaving 2.4GHz AP at 20MHz (75Mbps). When wifi_max_perf=1,
+	 * also upgrade 2.4GHz 1-11 to HT40 if reg allows 40MHz.
+	 * 1-4 = HT40+ (center+10), 5-11 = HT40- (center-10) per
+	 * bw_40_minus_channels table. Beyond stock: OBSS interference.
+	 */
 	} else if (sdev->fw_ht_enabled && sdev->allow_switch_40_mhz &&
 			   slsi_get_max_bw_mhz(sdev, ndev_vif->chandef->chan->center_freq) >= 40 &&
-			   ((ndev_vif->chandef->chan->hw_value < 165 && ndev_vif->chandef->chan->hw_value >= 36))) {
+			   (ndev_vif->chandef->chan->hw_value < 165 && ndev_vif->chandef->chan->hw_value >= 36)) {
 		/* HT40 configuration (5GHz/2GHz and HT) */
 		u16  oper_chan = ndev_vif->chandef->chan->hw_value;
 		u8   bw_40_minus_channels[] = { 40, 48, 153, 161, 5, 6, 7, 8, 9, 10, 11 };
@@ -3402,7 +3422,7 @@ static struct cfg80211_ops slsi_ops = {
 	.mgmt_tx = slsi_mgmt_tx,
 	.mgmt_tx_cancel_wait = slsi_mgmt_tx_cancel_wait,
 	.set_txq_params = slsi_set_txq_params,
-#ifdef CONFIG_SCSC_WLAN_SAE_CONFIG
+#if defined(CONFIG_SCSC_WLAN_SAE_CONFIG) && (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
     .external_auth = slsi_synchronised_response,
 #endif
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 9))
@@ -3425,14 +3445,14 @@ static struct cfg80211_ops slsi_ops = {
 		.band = IEEE80211_BAND_2GHZ, \
 		.center_freq = (_freq), \
 		.hw_value = (_idx), \
-		.max_power = 17, \
+		.max_power = 20, /* Wi-Fi 4 max: regulatory still clamps; was 17 */ \
 }
 
 #define CHAN5G(_freq, _idx)  { \
 		.band = IEEE80211_BAND_5GHZ, \
 		.center_freq = (_freq), \
 		.hw_value = (_idx), \
-		.max_power = 17, \
+		.max_power = 20, /* Wi-Fi 4 max: regulatory still clamps; was 17 */ \
 }
 
 static struct ieee80211_channel slsi_2ghz_channels[] = {
@@ -3695,7 +3715,13 @@ struct slsi_dev                           *slsi_cfg80211_new(struct device *dev)
 
 	/* Allow changing of the netns, if NOT set then no changes are allowed */
 	wiphy->flags |= WIPHY_FLAG_NETNS_OK;
+#ifdef CONFIG_SCSC_WLAN_MAX_PERF
+	/* Wi-Fi 4 max default is ACTIVE (no PS). slsi_set_power_mgmt()
+	 * also ignores PS requests when wifi_max_perf=1. */
+	wiphy->flags &= ~WIPHY_FLAG_PS_ON_BY_DEFAULT;
+#else
 	wiphy->flags |= WIPHY_FLAG_PS_ON_BY_DEFAULT;
+#endif
 	wiphy->flags |= WIPHY_FLAG_CONTROL_PORT_PROTOCOL;
 #ifdef CONFIG_SCSC_WLAN_BSS_SELECTION
 	wiphy->flags |= WIPHY_FLAG_SUPPORTS_FW_ROAM;
@@ -3809,7 +3835,13 @@ struct slsi_dev                           *slsi_cfg80211_new(struct device *dev)
 #endif
 #endif
 #ifdef CONFIG_SCSC_WLAN_SAE_CONFIG
-    wiphy->features |= NL80211_FEATURE_SAE;
+    /* m20lte 2026-10-09: do NOT advertise NL80211_FEATURE_SAE. The mx140
+     * firmware rejects SAE-typed MLME-CONNECT.req instantly (0x800c
+     * HOST_REQUEST_FAILED), and Android prefers SAE whenever the device
+     * claims support, which wedges every connect to a transition-mode AP
+     * into that dead end. WPA2-PSK (which this FW does well) is selected
+     * only when SAE is unadvertised. The 4.4 compat shim stays for code
+     * completeness. */
 #endif
 	return sdev;
 }
@@ -3865,6 +3897,24 @@ void slsi_cfg80211_update_wiphy(struct slsi_dev *sdev)
 	} else {
 		slsi_ht_cap.ht_supported = false;
 	}
+	/* Wi-Fi 4 max: force 1SS HT40/SGI/LDPC/64K even if FW reports
+	 * conservative 20MHz-only caps. Single antenna stays 1SS
+	 * (rx_mask 0xff). Density 0 = no mando delay, factor 3 = 64K.
+	 * Beyond stock: may lose range/interop on noisy 2.4GHz.
+	 */
+	if (slsi_wifi_max_perf_enabled()) {
+		slsi_ht_cap.ht_supported = true;
+		slsi_ht_cap.cap |= IEEE80211_HT_CAP_SUP_WIDTH_20_40 |
+				    IEEE80211_HT_CAP_SGI_20 |
+				    IEEE80211_HT_CAP_SGI_40 |
+				    IEEE80211_HT_CAP_LDPC_CODING |
+				    IEEE80211_HT_CAP_RX_STBC |
+				    IEEE80211_HT_CAP_GRN_FLD;
+		slsi_ht_cap.ampdu_factor = IEEE80211_HT_MAX_AMPDU_64K;
+		slsi_ht_cap.ampdu_density = 0;
+		slsi_ht_cap.mcs.rx_mask[0] = 0xff;
+		SLSI_WARN(sdev, "wifi_max_perf=1: forcing HT40/SGI/LDPC/64K (was fw_ht %d)\n", sdev->fw_ht_enabled);
+	}
 	slsi_band_2ghz.ht_cap = slsi_ht_cap;
 	slsi_band_5ghz.ht_cap = slsi_ht_cap;
 
@@ -3878,6 +3928,7 @@ void slsi_cfg80211_update_wiphy(struct slsi_dev *sdev)
 	}
 	slsi_band_5ghz.vht_cap = slsi_vht_cap;
 #endif
+
 
 	SLSI_INFO(sdev, "BANDS SUPPORTED -> 2.4:'%c' 5:'%c'\n", sdev->wiphy->bands[IEEE80211_BAND_2GHZ] ? 'Y' : 'N',
 		  sdev->wiphy->bands[IEEE80211_BAND_5GHZ] ? 'Y' : 'N');
