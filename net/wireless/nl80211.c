@@ -3292,8 +3292,14 @@ static bool nl80211_valid_auth_type(struct cfg80211_registered_device *rdev,
 		return true;
 	case NL80211_CMD_CONNECT:
 	case NL80211_CMD_START_AP:
-		/* SAE not supported yet */
-		if (auth_type == NL80211_AUTHTYPE_SAE)
+		/* m20lte SAE: allow SAE when the driver advertises
+		 * NL80211_FEATURE_SAE (our SLSI driver does with
+		 * SCSC_WLAN_SAE_CONFIG for software SAE via supplicant).
+		 * Stock 4.4 rejected SAE unconditionally here, which made
+		 * every SAE-typed connect fail instantly with -EINVAL
+		 * before the driver was even called. */
+		if (!(rdev->wiphy.features & NL80211_FEATURE_SAE) &&
+		    auth_type == NL80211_AUTHTYPE_SAE)
 			return false;
 		return true;
 	default:
