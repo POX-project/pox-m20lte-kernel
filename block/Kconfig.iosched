@@ -39,12 +39,24 @@ config CFQ_GROUP_IOSCHED
 	---help---
 	  Enable group IO scheduling in CFQ.
 
+config IOSCHED_MAPLE
+	tristate "Maple I/O scheduler"
+	default y
+	---help---
+	  The Maple I/O scheduler (based on Zen and SIO) uses a first
+	  come first serve algorithm with separated read/write handling
+	  and read bias. Simple tasks and app launches improve. Suitable
+	  for flash/eMMC storage on mobile (m20lte).
+
 choice
 	prompt "Default I/O scheduler"
 	default DEFAULT_CFQ
 	help
 	  Select the I/O scheduler which will be used by default for all
 	  block devices.
+
+	config DEFAULT_MAPLE
+		bool "Maple" if IOSCHED_MAPLE=y
 
 	config DEFAULT_DEADLINE
 		bool "Deadline" if IOSCHED_DEADLINE=y
@@ -59,6 +71,7 @@ endchoice
 
 config DEFAULT_IOSCHED
 	string
+	default "maple" if DEFAULT_MAPLE
 	default "deadline" if DEFAULT_DEADLINE
 	default "cfq" if DEFAULT_CFQ
 	default "noop" if DEFAULT_NOOP
