@@ -2,13 +2,17 @@ name: Build Pox Kernel for Samsung Galaxy M20 (m20lte)
 
 on:
   push:
-    branches: [grapheneos-fixes, onyx, main]
+    branches: [grapheneos-fixes, onyx, onyx-apatch, onyx-ksu-next, main]
   workflow_dispatch:
     inputs:
-      defconfig:
-        description: 'Defconfig to build'
+      variant:
+        description: "Variant to build (vanilla, apatch, ksu-next)"
         required: false
-        default: 'exynos7885-m20_gsi_defconfig'
+        default: "auto"
+      defconfig:
+        description: "Defconfig to build (empty for auto)"
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -18,13 +22,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: recursive
 
-      - name: Install deps (22.04-compatible, best-effort)
+      - name: Install deps (22.04-compatible)
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison flex libssl-dev libncurses-dev \
             ccache zip unzip cpio device-tree-compiler lzop libtinfo6 \
-            gcc make python3 || true
+            gcc make python3 curl || true
           sudo apt-get install -y lib32z1 lib32stdc++6 2>/dev/null || true
           sudo ln -sf /usr/bin/python3 /usr/bin/python 2>/dev/null || true
           which ccache gcc python3 make dtc || true
@@ -38,23 +43,48 @@ jobs:
           python --version
           make --version | head -1
 
-      - name: Build Pox Kernel (m20 GSI)
+      - name: Build Pox Kernel
         run: |
           set -e
-          DEFCONFIG="${{ github.event.inputs.defconfig }}"
-          if [ -z "$DEFCONFIG" ]; then DEFCONFIG="exynos7885-m20_gsi_defconfig"; fi
-          echo "DEFCONFIG=$DEFCONFIG"
+          REF_NAME="${GITHUB_REF_NAME:-onyx}"
+          REQ_VARIANT="${{ github.event.inputs.variant }}"
+          if [ -z "$REQ_VARIANT" ] || [ "$REQ_VARIANT" = "auto" ]; then
+            case "$REF_NAME" in
+              onyx-apatch*|*apatch*) REQ_VARIANT="apatch" ;;
+              onyx-ksu-next*|*ksu-next*) REQ_VARIANT="ksu-next" ;;
+              *) REQ_VARIANT="vanilla" ;;
+            esac
+          fi
+
+          REQ_DEFCONFIG="${{ github.event.inputs.defconfig }}"
+          if [ -z "$REQ_DEFCONFIG" ]; then
+            case "$REQ_VARIANT" in
+              apatch) REQ_DEFCONFIG="exynos7885-m20_apatch_defconfig" ;;
+              ksu-next) REQ_DEFCONFIG="exynos7885-m20_ksu_next_defconfig" ;;
+              *) REQ_DEFCONFIG="exynos7885-m20_gsi_defconfig" ;;
+            esac
+          fi
+
+          echo "VARIANT=$REQ_VARIANT" >> $GITHUB_ENV
+          echo "DEFCONFIG=$REQ_DEFCONFIG" >> $GITHUB_ENV
+          echo "REF_NAME=$REF_NAME" >> $GITHUB_ENV
+
+          echo "=== Build Parameters ==="
+          echo "Branch/Ref: $REF_NAME"
+          echo "Variant: $REQ_VARIANT"
+          echo "Defconfig: $REQ_DEFCONFIG"
+
           export ARCH=arm64
           export PLATFORM_VERSION=11
           export ANDROID_MAJOR_VERSION=r
           export CROSS_COMPILE=$PWD/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin/aarch64-linux-android-
           export CCACHE_DIR=$HOME/.ccache
           mkdir -p out
-          make ARCH=arm64 $DEFCONFIG
+          make ARCH=arm64 $REQ_DEFCONFIG
           make ARCH=arm64 -j$(nproc) Image dtbs modules 2>&1 | tee out/build.log
-          echo "=== outputs ==="
+
+          echo "=== Build Outputs ==="
           ls -lh arch/arm64/boot/Image || true
-          ls -lh arch/arm64/boot/dts/exynos/*.dtb 2>/dev/null | head || true
           find . -maxdepth 4 -name "*.ko" | head
 
       - name: Package AnyKernel3 + raw Image
@@ -62,27 +92,54 @@ jobs:
           set -e
           export ARCH=arm64
           mkdir -p dist
-          cp arch/arm64/boot/Image dist/Image-m20lte-pox-onyx
+          cp arch/arm64/boot/Image dist/Image-m20lte
           mkdir -p dist/modules
           find . -name "*.ko" -exec cp {} dist/modules/ \; || true
           cp out/build.log dist/ || true
           cp .config dist/defconfig_used || true
+
+          case "$VARIANT" in
+            apatch)
+              EDITION="Onyx-APatch"
+              ZIP_NAME="Pox-Kernel-1.0.0-Beta-Onyx-APatch-m20lte.zip"
+              ;;
+            ksu-next)
+              EDITION="Onyx-KSU-Next"
+              ZIP_NAME="Pox-Kernel-1.0.0-Beta-Onyx-KSUN-m20lte.zip"
+              ;;
+            *)
+              EDITION="Onyx"
+              ZIP_NAME="Pox-Kernel-1.0.0-Beta-Onyx-m20lte.zip"
+              ;;
+          esac
+
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+          echo "EDITION=$EDITION" >> $GITHUB_ENV
 
           # Clone AnyKernel3 template and package flashable zip
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git dist/AnyKernel3-template || true
           rm -rf AnyKernel3
           cp -r dist/AnyKernel3-template AnyKernel3
           rm -rf AnyKernel3/.git AnyKernel3/.github
-          cp dist/Image-m20lte-pox-onyx AnyKernel3/zImage 2>/dev/null || cp dist/Image AnyKernel3/zImage || true
+          cp dist/Image-m20lte AnyKernel3/zImage 2>/dev/null || true
 
-          cat > AnyKernel3/anykernel.sh << 'EOS'
+          # If APatch variant, download latest FolkPatch (KernelPatch / APatch) package
+          if [ "$VARIANT" = "apatch" ]; then
+            echo "Fetching latest FolkPatch release package..."
+            FP_URL=$(curl -sL https://api.github.com/repos/LyraVoid/FolkPatch/releases/latest | grep "browser_download_url.*apk" | head -1 | cut -d : -f 2,3 | tr -d \" | tr -d " ")
+            if [ -n "$FP_URL" ]; then
+              curl -sL "$FP_URL" -o AnyKernel3/folkpatch.zip || true
+              echo "Bundled FolkPatch package: $(ls -lh AnyKernel3/folkpatch.zip)"
+            fi
+          fi
+
+          cat > AnyKernel3/anykernel.sh << EOS
           # AnyKernel3 Ramdisk Mod Script
-          # Pox Kernel 1.0.0-Beta-Onyx for Samsung Galaxy M20 (m20lte) by txorav
+          # Pox Kernel 1.0.0-Beta-\${EDITION} for Samsung Galaxy M20 (m20lte) by txorav
 
           ### AnyKernel setup
-          # global properties
           properties() { '
-          kernel.string=Pox Kernel 1.0.0-Beta-Onyx for Samsung Galaxy M20 (m20lte) by txorav
+          kernel.string=Pox Kernel 1.0.0-Beta-\${EDITION} for Samsung Galaxy M20 (m20lte) by txorav
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -96,38 +153,73 @@ jobs:
           supported.versions=
           supported.patchlevels=
           supported.vendorpatchlevels=
-          '; } # end properties
+          '; }
 
-          ### AnyKernel install
           boot_attributes() {
-          set_perm_recursive 0 0 755 644 $RAMDISK/*;
-          set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
-          } # end attributes
+          set_perm_recursive 0 0 755 644 \\$RAMDISK/*;
+          set_perm_recursive 0 0 750 750 \\$RAMDISK/init* \\$RAMDISK/sbin;
+          }
 
-          # boot shell variables
           BLOCK=auto;
           IS_SLOT_DEVICE=0;
           RAMDISK_COMPRESSION=auto;
           PATCH_VBMETA_FLAG=auto;
 
-          # import functions/variables and setup patching - see for reference (DO NOT REMOVE)
           . tools/ak3-core.sh;
 
-          # boot install - kernel only, keep stock ramdisk
-          dump_boot;
+          ui_print " ";
+          ui_print " ============================================";
+          ui_print "   POX KERNEL 1.0.0-BETA [\${EDITION}]        ";
+          ui_print "   Samsung Galaxy M20 (universal7885)        ";
+          ui_print " ============================================";
+          ui_print "  * Engine       : Zero Frame-Drop Gaming Core";
+          ui_print "  * Kprofiles    : Tri-State LCD Auto-Governor";
+          ui_print "  * Health Engine: OPP Dynamic Silicon Guard ";
+          ui_print "  * Battery Care : Bypass & Current Limiting ";
+          ui_print "  * Display Mode : iOS D65 Calibrated Reference";
+          ui_print "  * Root Flavor  : \${EDITION}";
+          ui_print " --------------------------------------------";
 
+          dump_boot;
           write_boot;
-          ## end boot install
           EOS
-          (cd AnyKernel3 && zip -r9 ../dist/Pox-Kernel-1.0.0-Beta-Onyx-m20lte.zip . -x .git/\* .github/\*)
-          cp dist/Pox-Kernel-1.0.0-Beta-Onyx-m20lte.zip dist/AnyKernel3-m20lte-pox-onyx.zip
+
+          if [ "$VARIANT" = "apatch" ]; then
+            cat >> AnyKernel3/anykernel.sh << 'EOS'
+          ## Auto-flash bundled FolkPatch (KernelPatch / APatch) package
+          FP_SRC="";
+          for fp in "$AKHOME/folkpatch.zip" "folkpatch.zip"; do
+              [ -f "$fp" ] && { FP_SRC="$fp"; break; };
+          done;
+          if [ -n "$FP_SRC" ]; then
+              ui_print " ";
+              ui_print " ============================================";
+              ui_print "   Flashing bundled FolkPatch (KernelPatch)   ";
+              ui_print " ============================================";
+              sync;
+              FP_INSTALL=/dev/tmp/install;
+              rm -rf "$FP_INSTALL";
+              mkdir -p "$FP_INSTALL";
+              unzip -o "$FP_SRC" "assets/*" "lib/*" -d "$FP_INSTALL" >/dev/null 2>&1;
+              if [ -f "$FP_INSTALL/assets/InstallAP.sh" ]; then
+                  chmod -R 755 "$FP_INSTALL/assets" "$FP_INSTALL/lib" 2>/dev/null;
+                  ( cd "$FP_INSTALL" && sh assets/InstallAP.sh 3 "$OUTFD" "$FP_SRC" );
+                  ui_print " [*] FolkPatch (KernelPatch) installation complete.";
+              else
+                  ui_print " [!] FolkPatch installer not found; skipping root step.";
+              fi;
+          fi;
+          EOS
+          fi
+
+          (cd AnyKernel3 && zip -r9 ../dist/$ZIP_NAME . -x .git/\* .github/\*)
           rm -rf dist/AnyKernel3 dist/AnyKernel3-template
           ls -lh dist/
-          echo "FLASH THIS FILE IN TWRP/ORANGEFOX: dist/Pox-Kernel-1.0.0-Beta-Onyx-m20lte.zip"
+          echo "Flashable Package: dist/$ZIP_NAME"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pox-kernel-1.0.0-beta-onyx-m20lte
+          name: pox-kernel-1.0.0-beta-${{ env.EDITION }}-m20lte
           path: dist/
           if-no-files-found: error
