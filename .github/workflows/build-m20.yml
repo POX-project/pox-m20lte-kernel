@@ -1,8 +1,8 @@
-name: Build m20lte kernel (grapheneos-fixes)
+name: Build Pox Kernel for Samsung Galaxy M20 (m20lte)
 
 on:
   push:
-    branches: [grapheneos-fixes]
+    branches: [grapheneos-fixes, onyx, main]
   workflow_dispatch:
     inputs:
       defconfig:
@@ -38,7 +38,7 @@ jobs:
           python --version
           make --version | head -1
 
-      - name: Build kernel (m20 GSI)
+      - name: Build Pox Kernel (m20 GSI)
         run: |
           set -e
           DEFCONFIG="${{ github.event.inputs.defconfig }}"
@@ -48,10 +48,8 @@ jobs:
           export PLATFORM_VERSION=11
           export ANDROID_MAJOR_VERSION=r
           export CROSS_COMPILE=$PWD/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin/aarch64-linux-android-
-          # 4.4 Makefile forces HOSTCC='ccache gcc'; ensure ccache exists
           export CCACHE_DIR=$HOME/.ccache
           mkdir -p out
-          # NOTE: no O=out — Samsung 4.4 sdcardfs Kconfig breaks with out-of-tree builds
           make ARCH=arm64 $DEFCONFIG
           make ARCH=arm64 -j$(nproc) Image dtbs modules 2>&1 | tee out/build.log
           echo "=== outputs ==="
@@ -63,76 +61,73 @@ jobs:
         run: |
           set -e
           export ARCH=arm64
-          # raw Image (in-tree build)
           mkdir -p dist
-          cp arch/arm64/boot/Image dist/Image-m20lte-grapheneos-fixes
-          # modules
+          cp arch/arm64/boot/Image dist/Image-m20lte-pox-onyx
           mkdir -p dist/modules
           find . -name "*.ko" -exec cp {} dist/modules/ \; || true
           cp out/build.log dist/ || true
           cp .config dist/defconfig_used || true
-          # AnyKernel3 zip (TWRP flashable) - inner zip is the flashable file,
-          # outer artifact is just CI packaging (do NOT flash outer).
+
+          # Clone AnyKernel3 template and package flashable zip
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git dist/AnyKernel3-template || true
           rm -rf AnyKernel3
           cp -r dist/AnyKernel3-template AnyKernel3
           rm -rf AnyKernel3/.git AnyKernel3/.github
-          cp dist/Image-m20lte-grapheneos-fixes AnyKernel3/zImage 2>/dev/null || cp dist/Image AnyKernel3/zImage || true
-          # m20lte anykernel.sh: kernel-only, keep stock ramdisk, BLOCK=auto
-          # (do NOT strip required properties/BLOCK vars - TWRP aborts without them)
+          cp dist/Image-m20lte-pox-onyx AnyKernel3/zImage 2>/dev/null || cp dist/Image AnyKernel3/zImage || true
+
           cat > AnyKernel3/anykernel.sh << 'EOS'
-          # AnyKernel3 Ramdisk Mod Script
-          # GrapheneOS m20lte fixes by txorav
+# AnyKernel3 Ramdisk Mod Script
+# Pox Kernel 1.0.0-Beta-Onyx for Samsung Galaxy M20 (m20lte) by txorav
 
-          ### AnyKernel setup
-          # global properties
-          properties() { '
-          kernel.string=GrapheneOS m20lte fixes by txorav
-          do.devicecheck=1
-          do.modules=0
-          do.systemless=1
-          do.cleanup=1
-          do.cleanuponabort=0
-          device.name1=m20lte
-          device.name2=m20ltedd
-          device.name3=m20
-          device.name4=universal7885
-          device.name5=
-          supported.versions=
-          supported.patchlevels=
-          supported.vendorpatchlevels=
-          '; } # end properties
+### AnyKernel setup
+# global properties
+properties() { '
+kernel.string=Pox Kernel 1.0.0-Beta-Onyx for Samsung Galaxy M20 (m20lte) by txorav
+do.devicecheck=1
+do.modules=0
+do.systemless=1
+do.cleanup=1
+do.cleanuponabort=0
+device.name1=m20lte
+device.name2=m20ltedd
+device.name3=m20
+device.name4=universal7885
+device.name5=
+supported.versions=
+supported.patchlevels=
+supported.vendorpatchlevels=
+'; } # end properties
 
-          ### AnyKernel install
-          boot_attributes() {
-          set_perm_recursive 0 0 755 644 $RAMDISK/*;
-          set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
-          } # end attributes
+### AnyKernel install
+boot_attributes() {
+set_perm_recursive 0 0 755 644 $RAMDISK/*;
+set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
+} # end attributes
 
-          # boot shell variables
-          BLOCK=auto;
-          IS_SLOT_DEVICE=0;
-          RAMDISK_COMPRESSION=auto;
-          PATCH_VBMETA_FLAG=auto;
+# boot shell variables
+BLOCK=auto;
+IS_SLOT_DEVICE=0;
+RAMDISK_COMPRESSION=auto;
+PATCH_VBMETA_FLAG=auto;
 
-          # import functions/variables and setup patching - see for reference (DO NOT REMOVE)
-          . tools/ak3-core.sh;
+# import functions/variables and setup patching - see for reference (DO NOT REMOVE)
+. tools/ak3-core.sh;
 
-          # boot install - kernel only, keep stock ramdisk
-          dump_boot;
+# boot install - kernel only, keep stock ramdisk
+dump_boot;
 
-          write_boot;
-          ## end boot install
-          EOS
-          (cd AnyKernel3 && zip -r9 ../dist/AnyKernel3-m20lte-grapheneos-fixes.zip . -x .git/\* .github/\*)
-          # keep outer artifact small: inner zip + Image + logs only
+write_boot;
+## end boot install
+EOS
+          (cd AnyKernel3 && zip -r9 ../dist/Pox-Kernel-1.0.0-Beta-Onyx-m20lte.zip . -x .git/\* .github/\*)
+          cp dist/Pox-Kernel-1.0.0-Beta-Onyx-m20lte.zip dist/AnyKernel3-m20lte-pox-onyx.zip
           rm -rf dist/AnyKernel3 dist/AnyKernel3-template
           ls -lh dist/
-          echo "FLASH THIS FILE IN TWRP: dist/AnyKernel3-m20lte-grapheneos-fixes.zip (not the outer artifact)"
+          echo "FLASH THIS FILE IN TWRP/ORANGEFOX: dist/Pox-Kernel-1.0.0-Beta-Onyx-m20lte.zip"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: m20lte-grapheneos-fixes
+          name: pox-kernel-1.0.0-beta-onyx-m20lte
           path: dist/
           if-no-files-found: error
