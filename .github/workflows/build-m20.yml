@@ -99,9 +99,19 @@ jobs:
           chmod +x tools/package_ak3.sh
           bash tools/package_ak3.sh "${{ matrix.variant }}" "$EDITION" "$ZIP_NAME"
 
-      - name: Upload artifacts
+      - name: Upload AnyKernel3 flashable zip
         uses: actions/upload-artifact@v4
         with:
-          name: pox-kernel-1.0.0-beta-${{ matrix.variant }}-m20lte
-          path: dist/
+          name: Pox-Kernel-1.0.0-Beta-${{ env.EDITION }}-m20lte-AnyKernel3
+          path: dist/${{ env.ZIP_NAME }}
           if-no-files-found: error
+
+      - name: Upload build outputs and logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-outputs-${{ matrix.variant }}-m20lte
+          path: |
+            dist/Image-m20lte
+            dist/build.log
+            dist/defconfig_used
+          if-no-files-found: warn

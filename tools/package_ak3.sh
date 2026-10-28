@@ -28,7 +28,6 @@ rm -rf "$AK_DIR" "$DIST_DIR/AnyKernel3-template"
 git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git "$DIST_DIR/AnyKernel3-template"
 cp -r "$DIST_DIR/AnyKernel3-template" "$AK_DIR"
 rm -rf "$AK_DIR/.git" "$AK_DIR/.github"
-cp "$DIST_DIR/Image-m20lte" "$AK_DIR/zImage"
 
 if [ "$VARIANT" = "apatch" ]; then
     echo "Fetching latest FolkPatch release package..."
@@ -37,6 +36,29 @@ if [ "$VARIANT" = "apatch" ]; then
         curl -sL "$FP_URL" -o "$AK_DIR/folkpatch.zip" || true
         echo "Bundled FolkPatch package: $(ls -lh "$AK_DIR/folkpatch.zip" 2>/dev/null || true)"
     fi
+
+    # Fetch kptools-linux to pre-patch kernel with KernelPatch kpimg at build time
+    KPTOOLS="$ROOT_DIR/tools/kptools-linux"
+    if [ ! -f "$KPTOOLS" ]; then
+        curl -sL https://github.com/bmax121/KernelPatch/releases/download/0.13.9/kptools-linux -o "$KPTOOLS" || true
+        chmod +x "$KPTOOLS" 2>/dev/null || true
+    fi
+
+    if [ -x "$KPTOOLS" ] && [ -f "$AK_DIR/folkpatch.zip" ]; then
+        echo "Extracting kpimg from FolkPatch package..."
+        unzip -p "$AK_DIR/folkpatch.zip" assets/kpimg > "$DIST_DIR/kpimg" 2>/dev/null || true
+        if [ -s "$DIST_DIR/kpimg" ]; then
+            echo "Pre-patching kernel Image with KernelPatch (SuperKey: poxkernel)..."
+            "$KPTOOLS" -p -i "$DIST_DIR/Image-m20lte" -k "$DIST_DIR/kpimg" -s "poxkernel" -o "$AK_DIR/zImage"
+            rm -f "$DIST_DIR/kpimg"
+        else
+            cp "$DIST_DIR/Image-m20lte" "$AK_DIR/zImage"
+        fi
+    else
+        cp "$DIST_DIR/Image-m20lte" "$AK_DIR/zImage"
+    fi
+else
+    cp "$DIST_DIR/Image-m20lte" "$AK_DIR/zImage"
 fi
 
 cat > "$AK_DIR/anykernel.sh" << EOS
@@ -71,6 +93,16 @@ IS_SLOT_DEVICE=0;
 RAMDISK_COMPRESSION=auto;
 PATCH_VBMETA_FLAG=auto;
 
+## Ensure /dev/block/by-name/boot exists for Samsung Exynos (uppercase BOOT)
+if [ ! -e /dev/block/by-name/boot ]; then
+    for b in /dev/block/by-name/BOOT /dev/block/platform/*/by-name/BOOT; do
+        if [ -e "\$b" ]; then
+            ln -sf "\$b" /dev/block/by-name/boot;
+            break;
+        fi;
+    done;
+fi;
+
 . tools/ak3-core.sh;
 
 ui_print " ";
@@ -84,6 +116,16 @@ ui_print "  * Health Engine: OPP Dynamic Silicon Guard ";
 ui_print "  * Battery Care : Bypass & Current Limiting ";
 ui_print "  * Display Mode : iOS D65 Calibrated Reference";
 ui_print "  * Root Flavor  : ${EDITION}";
+EOS
+
+if [ "$VARIANT" = "apatch" ]; then
+    cat >> "$AK_DIR/anykernel.sh" << 'EOS'
+ui_print "  * Root Method  : KernelPatch Embedded";
+ui_print "  * SuperKey     : poxkernel";
+EOS
+fi
+
+cat >> "$AK_DIR/anykernel.sh" << 'EOS'
 ui_print " --------------------------------------------";
 
 dump_boot;
@@ -93,7 +135,16 @@ EOS
 if [ "$VARIANT" = "apatch" ]; then
     cat >> "$AK_DIR/anykernel.sh" << 'EOS'
 
-## Auto-flash bundled FolkPatch (KernelPatch / APatch) package
+## Stage FolkPatch manager APK to storage for easy installation
+for dest in /data/system /data/local/tmp /sdcard; do
+    [ -d "$dest" ] || continue;
+    if cp -f "$AKHOME/folkpatch.zip" "$dest/FolkPatch.apk" 2>/dev/null; then
+        chmod 0644 "$dest/FolkPatch.apk" 2>/dev/null;
+        ui_print " [*] Staged FolkPatch manager APK to $dest/FolkPatch.apk";
+    fi;
+done;
+
+## Auto-flash bundled FolkPatch package as secondary fallback
 FP_SRC="";
 for fp in "$AKHOME/folkpatch.zip" "folkpatch.zip"; do
     [ -f "$fp" ] && { FP_SRC="$fp"; break; };
@@ -110,7 +161,7 @@ if [ -n "$FP_SRC" ]; then
     unzip -o "$FP_SRC" "assets/*" "lib/*" -d "$FP_INSTALL" >/dev/null 2>&1;
     if [ -f "$FP_INSTALL/assets/InstallAP.sh" ]; then
         chmod -R 755 "$FP_INSTALL/assets" "$FP_INSTALL/lib" 2>/dev/null;
-        ( cd "$FP_INSTALL" && sh assets/InstallAP.sh 3 "$OUTFD" "$FP_SRC" );
+        ( cd "$FP_INSTALL" && sh assets/InstallAP.sh 3 "$OUTFD" "$FP_SRC" ) || true;
         ui_print " [*] FolkPatch (KernelPatch) installation complete.";
     else
         ui_print " [!] FolkPatch installer not found; skipping root step.";
