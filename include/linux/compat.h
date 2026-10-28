@@ -718,4 +718,8 @@ asmlinkage long compat_sys_fanotify_mark(int, unsigned int, __u32, __u32,
 #define is_compat_task() (0)
 
 #endif /* CONFIG_COMPAT */
+#ifndef in_compat_syscall
+static inline bool in_compat_syscall(void) { return is_compat_task(); }
+#endif
+
 #endif /* _LINUX_COMPAT_H */
