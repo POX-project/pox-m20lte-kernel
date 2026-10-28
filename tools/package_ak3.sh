@@ -49,7 +49,12 @@ if [ "$VARIANT" = "apatch" ]; then
         unzip -p "$AK_DIR/folkpatch.zip" assets/kpimg > "$DIST_DIR/kpimg" 2>/dev/null || true
         if [ -s "$DIST_DIR/kpimg" ]; then
             echo "Pre-patching kernel Image with KernelPatch (SuperKey: poxkernel)..."
-            "$KPTOOLS" -p -i "$DIST_DIR/Image-m20lte" -k "$DIST_DIR/kpimg" -s "poxkernel" -o "$AK_DIR/zImage"
+            if "$KPTOOLS" -p -i "$DIST_DIR/Image-m20lte" -k "$DIST_DIR/kpimg" -s "poxkernel" -o "$AK_DIR/zImage"; then
+                echo "Successfully pre-patched kernel with KernelPatch."
+            else
+                echo "Warning: kptools pre-patching failed, falling back to raw Image (recovery installer will patch)."
+                cp "$DIST_DIR/Image-m20lte" "$AK_DIR/zImage"
+            fi
             rm -f "$DIST_DIR/kpimg"
         else
             cp "$DIST_DIR/Image-m20lte" "$AK_DIR/zImage"
