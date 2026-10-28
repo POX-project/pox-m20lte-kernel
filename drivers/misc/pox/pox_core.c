@@ -77,7 +77,16 @@ static unsigned long pox_brownout_preventions;
 static int pox_fast_charge_enabled = 1;
 static int pox_charge_watt_target = 15;
 static int pox_pd_min_watt_val = 5;
-static int pox_pd_max_watt_val = 90;
+static int pox_pd_max_watt_val = 15;
+
+/* Health & OPP Voltage Guard Telemetry */
+static int pox_last_voc_mv = 4100;
+static int pox_last_vload_mv = 3800;
+static int pox_last_sag_mv = 100;
+static int pox_battery_esr_mohm = 120;
+static int pox_brownout_margin_mv = 400;
+static int pox_active_opp_ceiling_khz = 1768000;
+static int pox_thermal_gradient_mc_s = 50;
 static int pox_battery_bypass_enabled;
 static int pox_battery_limit_val = 100;
 static int pox_thermal_guard_enabled = 1;
@@ -127,7 +136,7 @@ static struct kobject *battery_kobj;
 static struct kobject *sound_kobj;
 
 /* Helper: read live battery info */
-static void get_battery_stats(int *temp_c, int *soc, int *status)
+static void get_battery_stats(int *temp_c, int *soc, int *status, int *vbat_mv, int *ibat_ma)
 {
 	struct power_supply *psy = power_supply_get_by_name("battery");
 	union power_supply_propval val;
@@ -135,6 +144,8 @@ static void get_battery_stats(int *temp_c, int *soc, int *status)
 	*temp_c = 30;
 	*soc = 50;
 	*status = POWER_SUPPLY_STATUS_DISCHARGING;
+	if (vbat_mv) *vbat_mv = 3800;
+	if (ibat_ma) *ibat_ma = 0;
 
 	if (!psy || !psy->desc || !psy->desc->get_property)
 		return;
@@ -145,6 +156,58 @@ static void get_battery_stats(int *temp_c, int *soc, int *status)
 		*soc = val.intval;
 	if (psy->desc->get_property(psy, POWER_SUPPLY_PROP_STATUS, &val) == 0)
 		*status = val.intval;
+	if (vbat_mv && psy->desc->get_property(psy, POWER_SUPPLY_PROP_VOLTAGE_NOW, &val) == 0)
+		*vbat_mv = val.intval / 1000;
+	if (ibat_ma && psy->desc->get_property(psy, POWER_SUPPLY_PROP_CURRENT_NOW, &val) == 0)
+		*ibat_ma = val.intval / 1000;
+}
+
+static void pox_health_calibration_sync(void)
+{
+	int temp_c, soc, status, vbat = 3800, ibat = 0;
+	int iload, temp_penalty, soc_deficit, soc_penalty, eff_esr, v_pred;
+
+	get_battery_stats(&temp_c, &soc, &status, &vbat, &ibat);
+	iload = (ibat < 0) ? -ibat : ibat;
+
+	if (vbat > 2500 && vbat < 5000)
+		pox_last_vload_mv = vbat;
+
+	if (iload < 250 && vbat > 3000) {
+		if (vbat > pox_last_voc_mv)
+			pox_last_voc_mv = vbat;
+		else
+			pox_last_voc_mv = (pox_last_voc_mv * 7 + vbat) / 8;
+	}
+
+	temp_penalty = (temp_c < 25) ? ((25 - temp_c) * 18) : 0;
+	soc_deficit = (soc < 100) ? (100 - soc) : 0;
+	soc_penalty = (soc_deficit * soc_deficit * soc_deficit) / 2200;
+	eff_esr = (pox_battery_esr_mohm * (1000 + temp_penalty + soc_penalty)) / 1000;
+	if (eff_esr < 25) eff_esr = 25;
+	if (eff_esr > 1500) eff_esr = 1500;
+
+	pox_last_sag_mv = pox_last_voc_mv - pox_last_vload_mv;
+	if (pox_last_sag_mv < 0) pox_last_sag_mv = 0;
+	pox_brownout_margin_mv = pox_last_vload_mv - 3400;
+
+	if (!pox_opp_guard_enabled || pox_health_cal_mode == HEALTH_CAL_DISABLED) {
+		pox_active_opp_ceiling_khz = 1768000;
+		return;
+	}
+
+	/* Predict terminal voltage under sudden 1500mA Cortex-A73 boost step */
+	v_pred = pox_last_voc_mv - (((iload + 1500) * eff_esr) / 1000);
+
+	/* Closed-loop dynamic OPP ceiling & rescue protection for Exynos 7904 */
+	if (vbat < 3480 || v_pred < 3450 || soc <= 15 || pox_health_cal_mode == HEALTH_CAL_LONGEVITY || temp_c >= 45) {
+		pox_active_opp_ceiling_khz = 1352000; /* Safe aged silicon sweet-spot */
+		pox_brownout_preventions++;
+	} else if (vbat < 3580 || v_pred < 3550 || soc <= 25) {
+		pox_active_opp_ceiling_khz = 1586000;
+	} else {
+		pox_active_opp_ceiling_khz = 1768000;
+	}
 }
 
 /* Adaptive Memory Engine for Exynos 7904 */
@@ -174,19 +237,27 @@ static void pox_memory_preset(int mode)
 /* Background Autonomous Health & Profile Guard */
 static void pox_dynamic_evaluate(struct work_struct *work)
 {
-	int temp_c, soc, status;
+	int temp_c, soc, status, vbat = 3800, ibat = 0;
 
 	mutex_lock(&pox_lock);
-	get_battery_stats(&temp_c, &soc, &status);
+	get_battery_stats(&temp_c, &soc, &status, &vbat, &ibat);
 
 	/* Battery Limit Guard: if charging and SoC reaches limit, pause */
 	if (status == POWER_SUPPLY_STATUS_CHARGING && soc >= pox_battery_limit_val) {
 		/* Charge ceiling reached */
+#if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
+		{
+			extern void pox_sec_battery_update_charging(void);
+			pox_sec_battery_update_charging();
+		}
+#endif
 	}
 
-	/* Health Silicon Guard: prevent voltage drop reboots on aging silicon */
+	/* Health Silicon Guard: run live closed-loop calibration */
+	pox_health_calibration_sync();
+
 	if (pox_opp_guard_enabled && (pox_gaming_mode_state >= GAMING_MODE_EXTREME)) {
-		if (temp_c >= pox_temp_limit_c || soc <= 15) {
+		if (temp_c >= pox_temp_limit_c || soc <= 15 || pox_active_opp_ceiling_khz <= 1352000) {
 			pox_brownout_preventions++;
 			pr_info("Battery guard engaged: temp %dC, soc %d%% -> stabilizing profile\n",
 				temp_c, soc);
@@ -304,6 +375,7 @@ EXPORT_SYMBOL(pox_kprofiles_auto_get);
 int pox_health_calibration_set(int mode)
 {
 	pox_health_cal_mode = mode;
+	pox_health_calibration_sync();
 	return 0;
 }
 EXPORT_SYMBOL(pox_health_calibration_set);
@@ -317,6 +389,7 @@ EXPORT_SYMBOL(pox_health_calibration_get);
 int pox_opp_voltage_guard_set(int enable)
 {
 	pox_opp_guard_enabled = enable ? 1 : 0;
+	pox_health_calibration_sync();
 	return 0;
 }
 EXPORT_SYMBOL(pox_opp_voltage_guard_set);
@@ -330,6 +403,12 @@ EXPORT_SYMBOL(pox_opp_voltage_guard_get);
 int pox_battery_bypass_set(int enable)
 {
 	pox_battery_bypass_enabled = enable ? 1 : 0;
+#if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
+	{
+		extern void pox_sec_battery_update_charging(void);
+		pox_sec_battery_update_charging();
+	}
+#endif
 	return 0;
 }
 EXPORT_SYMBOL(pox_battery_bypass_set);
@@ -342,11 +421,14 @@ EXPORT_SYMBOL(pox_battery_bypass_get);
 
 int pox_battery_limit_set(int limit)
 {
-	if (limit < 50)
-		limit = 50;
-	if (limit > 100)
-		limit = 100;
+	limit = clamp(limit, 50, 100);
 	pox_battery_limit_val = limit;
+#if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
+	{
+		extern void pox_sec_battery_update_charging(void);
+		pox_sec_battery_update_charging();
+	}
+#endif
 	return 0;
 }
 EXPORT_SYMBOL(pox_battery_limit_set);
@@ -360,6 +442,12 @@ EXPORT_SYMBOL(pox_battery_limit_get);
 int pox_fast_charge_set(int enable)
 {
 	pox_fast_charge_enabled = enable ? 1 : 0;
+#if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
+	{
+		extern void pox_sec_battery_update_charging(void);
+		pox_sec_battery_update_charging();
+	}
+#endif
 	return 0;
 }
 EXPORT_SYMBOL(pox_fast_charge_set);
@@ -372,11 +460,14 @@ EXPORT_SYMBOL(pox_fast_charge_get);
 
 int pox_charge_watt_set(int watt)
 {
-	if (watt < 5)
-		watt = 5;
-	if (watt > 90)
-		watt = 90;
+	watt = clamp(watt, 5, 15);
 	pox_charge_watt_target = watt;
+#if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
+	{
+		extern void pox_sec_battery_update_charging(void);
+		pox_sec_battery_update_charging();
+	}
+#endif
 	return 0;
 }
 EXPORT_SYMBOL(pox_charge_watt_set);
@@ -389,7 +480,7 @@ EXPORT_SYMBOL(pox_charge_watt_get);
 
 int pox_pd_min_watt_set(int watt)
 {
-	pox_pd_min_watt_val = watt;
+	pox_pd_min_watt_val = clamp(watt, 5, 15);
 	return 0;
 }
 EXPORT_SYMBOL(pox_pd_min_watt_set);
@@ -402,7 +493,7 @@ EXPORT_SYMBOL(pox_pd_min_watt_get);
 
 int pox_pd_max_watt_set(int watt)
 {
-	pox_pd_max_watt_val = watt;
+	pox_pd_max_watt_val = clamp(watt, 5, 15);
 	return 0;
 }
 EXPORT_SYMBOL(pox_pd_max_watt_set);
@@ -1005,9 +1096,11 @@ POX_GENERIC_FOPS(sched_bore, sched_bore_getter, sched_bore_setter);
 /* Meta Readout: /proc/perfmgr/profile */
 static int profile_proc_show(struct seq_file *m, void *v)
 {
-	int temp_c, soc, status;
+	int temp_c, soc, status, vbat = 3800, ibat = 0;
 
-	get_battery_stats(&temp_c, &soc, &status);
+	get_battery_stats(&temp_c, &soc, &status, &vbat, &ibat);
+	pox_health_calibration_sync();
+
 	seq_printf(m, "kernel_version: %s\n", POX_KERNEL_VERSION);
 	seq_printf(m, "target_device: %s\n", POX_DEVICE_NAME);
 	seq_printf(m, "gaming_mode: %d\n", pox_gaming_mode_get());
@@ -1016,6 +1109,9 @@ static int profile_proc_show(struct seq_file *m, void *v)
 	seq_printf(m, "health_calibration: %d\n", pox_health_calibration_get());
 	seq_printf(m, "battery_temp_c: %d\n", temp_c);
 	seq_printf(m, "battery_soc: %d\n", soc);
+	seq_printf(m, "voltage_mv: %d\n", vbat);
+	seq_printf(m, "current_ma: %d\n", ibat);
+	seq_printf(m, "active_opp_ceiling_khz: %d\n", pox_active_opp_ceiling_khz);
 	seq_printf(m, "brownout_preventions: %lu\n", pox_brownout_preventions);
 	seq_printf(m, "dynamic_fsync: %d\n", pox_dynamic_fsync_get());
 	return 0;
@@ -1036,15 +1132,17 @@ static const struct file_operations profile_proc_fops = {
 /* Battery Status Readout: /proc/perfmgr/battery_status & /sys/kernel/battery_protection/status */
 static int battery_status_proc_show(struct seq_file *m, void *v)
 {
-	int temp_c, soc, status;
+	int temp_c, soc, status, vbat = 3800, ibat = 0;
 
-	get_battery_stats(&temp_c, &soc, &status);
-	seq_printf(m, "capacity: %d%%\n", soc);
-	seq_printf(m, "temperature: %d C\n", temp_c);
-	seq_printf(m, "status: %s\n", (status == POWER_SUPPLY_STATUS_CHARGING) ? "Charging" : "Discharging");
-	seq_printf(m, "bypass_mode: %s\n", pox_battery_bypass_enabled ? "Active" : "Disabled");
-	seq_printf(m, "charge_limit: %d%%\n", pox_battery_limit_val);
-	seq_printf(m, "target_watt: %dW\n", pox_charge_watt_target);
+	get_battery_stats(&temp_c, &soc, &status, &vbat, &ibat);
+	seq_printf(m, "capacity=%d\n", soc);
+	seq_printf(m, "temperature=%d\n", temp_c);
+	seq_printf(m, "voltage_mv=%d\n", vbat);
+	seq_printf(m, "current_ma=%d\n", ibat);
+	seq_printf(m, "status=%s\n", (status == POWER_SUPPLY_STATUS_CHARGING) ? "Charging" : "Discharging");
+	seq_printf(m, "bypass_mode=%d\n", pox_battery_bypass_enabled);
+	seq_printf(m, "charge_limit=%d\n", pox_battery_limit_val);
+	seq_printf(m, "target_watt=%d\n", pox_charge_watt_target);
 	return 0;
 }
 
@@ -1063,13 +1161,13 @@ static const struct file_operations battery_status_proc_fops = {
 static ssize_t battery_status_sysfs_show(struct kobject *kobj,
 					 struct kobj_attribute *attr, char *buf)
 {
-	int temp_c, soc, status;
+	int temp_c, soc, status, vbat = 3800, ibat = 0;
 
-	get_battery_stats(&temp_c, &soc, &status);
+	get_battery_stats(&temp_c, &soc, &status, &vbat, &ibat);
 	return scnprintf(buf, PAGE_SIZE,
-			 "capacity: %d%%\ntemperature: %d C\nstatus: %s\nbypass: %d\nlimit: %d\n",
-			 soc, temp_c, (status == POWER_SUPPLY_STATUS_CHARGING) ? "Charging" : "Discharging",
-			 pox_battery_bypass_enabled, pox_battery_limit_val);
+			 "capacity=%d\ntemperature=%d\nvoltage_mv=%d\ncurrent_ma=%d\nstatus=%s\nbypass_mode=%d\ncharge_limit=%d\ntarget_watt=%d\n",
+			 soc, temp_c, vbat, ibat, (status == POWER_SUPPLY_STATUS_CHARGING) ? "Charging" : "Discharging",
+			 pox_battery_bypass_enabled, pox_battery_limit_val, pox_charge_watt_target);
 }
 
 static struct kobj_attribute battery_status_kobj_attr =
@@ -1078,15 +1176,33 @@ static struct kobj_attribute battery_status_kobj_attr =
 /* Health Status Readout: /proc/perfmgr/health_status */
 static int health_status_proc_show(struct seq_file *m, void *v)
 {
-	int temp_c, soc, status;
+	int temp_c, soc, status, vbat = 3800, ibat = 0;
+	int temp_penalty, soc_deficit, soc_penalty, eff_esr;
 
-	get_battery_stats(&temp_c, &soc, &status);
-	seq_printf(m, "health_mode: %d\n", pox_health_cal_mode);
-	seq_printf(m, "opp_voltage_guard: %s\n", pox_opp_guard_enabled ? "Armed" : "Disarmed");
-	seq_printf(m, "battery_temp_c: %d\n", temp_c);
-	seq_printf(m, "battery_soc: %d\n", soc);
-	seq_printf(m, "brownout_preventions: %lu\n", pox_brownout_preventions);
-	seq_printf(m, "status: Calibrated (100%% Health) • Watchdog Armed\n");
+	get_battery_stats(&temp_c, &soc, &status, &vbat, &ibat);
+	temp_penalty = (temp_c < 25) ? ((25 - temp_c) * 18) : 0;
+	soc_deficit = (soc < 100) ? (100 - soc) : 0;
+	soc_penalty = (soc_deficit * soc_deficit * soc_deficit) / 2200;
+	eff_esr = (pox_battery_esr_mohm * (1000 + temp_penalty + soc_penalty)) / 1000;
+	if (eff_esr < 25) eff_esr = 25;
+	if (eff_esr > 1500) eff_esr = 1500;
+
+	pox_health_calibration_sync();
+
+	seq_printf(m, "calibration_mode=%d\n", pox_health_cal_mode);
+	seq_printf(m, "voltage_guard_enabled=%d\n", pox_opp_guard_enabled);
+	seq_printf(m, "battery_voc_mv=%d\n", pox_last_voc_mv);
+	seq_printf(m, "battery_vload_mv=%d\n", pox_last_vload_mv);
+	seq_printf(m, "battery_voltage_sag_mv=%d\n", pox_last_sag_mv);
+	seq_printf(m, "battery_esr_mohm=%d\n", pox_battery_esr_mohm);
+	seq_printf(m, "battery_esr_effective_mohm=%d\n", eff_esr);
+	seq_printf(m, "brownout_safety_margin_mv=%d\n", pox_brownout_margin_mv);
+	seq_printf(m, "active_opp_ceiling_khz=%d\n", pox_active_opp_ceiling_khz);
+	seq_printf(m, "brownout_preventions=%lu\n", pox_brownout_preventions);
+	seq_printf(m, "brownout_preventions_count=%lu\n", pox_brownout_preventions);
+	seq_printf(m, "battery_temp_c=%d\n", temp_c);
+	seq_printf(m, "battery_soc=%d\n", soc);
+	seq_printf(m, "status=%s\n", (vbat >= 3550 && soc > 20) ? "OPTIMAL_PERFORMANCE" : "GUARD_PROTECTED");
 	return 0;
 }
 

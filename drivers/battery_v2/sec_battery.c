@@ -1061,6 +1061,46 @@ static int sec_bat_set_charging_current(struct sec_battery_info *battery)
 		}
 	}
 
+#if IS_ENABLED(CONFIG_POX_KERNEL)
+		/* Pox Kernel Hardware Charging Specification Enforcement */
+		if (battery->cable_type == SEC_BATTERY_CABLE_USB) {
+			/* AGENTS.md Rule 2: Standard PC USB SDP strictly limited to 500mA */
+			if (input_current > 500)
+				input_current = 500;
+			if (charging_current > 500)
+				charging_current = 500;
+		} else if (pox_battery_bypass_get() && battery->capacity >= 20) {
+			/* Battery Bypass: power phone directly from DC line without charging cell */
+			charging_current = 0;
+		} else if (battery->capacity >= pox_battery_limit_get()) {
+			/* Battery Protect Ceiling reached */
+			charging_current = 0;
+		} else if (!pox_fast_charge_get()) {
+			/* Fast charging disabled: limit to safe standard 5V 1A */
+			if (input_current > 1000)
+				input_current = 1000;
+			if (charging_current > 1000)
+				charging_current = 1000;
+		} else {
+			/* Fast charging enabled: calculate target wattage within 15W hardware limit */
+			int watt = clamp(pox_charge_watt_get(), 5, 15);
+
+			if (is_hv_wire_type(battery->cable_type) ||
+			    battery->cable_type == SEC_BATTERY_CABLE_9V_TA ||
+			    battery->cable_type == SEC_BATTERY_CABLE_QC20 ||
+			    battery->cable_type == SEC_BATTERY_CABLE_PDIC) {
+				/* 9V AFC: W = V * I -> I_in = W * 1000 / 9 */
+				input_current = clamp((watt * 1000) / 9, 500, 1670);
+				/* I_chg = (0.90 * W * 1000) / 4.0V */
+				charging_current = clamp((900 * watt) / 4, 1000, 3150);
+			} else if (battery->cable_type == SEC_BATTERY_CABLE_TA) {
+				/* 5V TA: I_in = min(2000, W * 1000 / 5) */
+				input_current = clamp((watt * 1000) / 5, 500, 2000);
+				charging_current = clamp((900 * watt) / 4, 1000, 2000);
+			}
+		}
+#endif
+
 	/* In wireless charging, must be set charging current before input current. */
 	if (is_wireless_type(battery->cable_type) &&
 		battery->charging_current != charging_current) {
@@ -1114,6 +1154,22 @@ static int sec_bat_set_charging_current(struct sec_battery_info *battery)
 	mutex_unlock(&battery->iolock);
 	return 0;
 }
+
+#if IS_ENABLED(CONFIG_POX_KERNEL)
+#include "../misc/pox/pox_core.h"
+
+static struct sec_battery_info *g_sec_battery;
+
+void pox_sec_battery_update_charging(void)
+{
+	if (g_sec_battery) {
+		sec_bat_set_charging_current(g_sec_battery);
+		if (g_sec_battery->monitor_wqueue)
+			queue_delayed_work(g_sec_battery->monitor_wqueue, &g_sec_battery->monitor_work, 0);
+	}
+}
+EXPORT_SYMBOL(pox_sec_battery_update_charging);
+#endif
 
 static int sec_bat_set_charge(
 				struct sec_battery_info *battery,
@@ -10255,6 +10311,10 @@ static int sec_battery_probe(struct platform_device *pdev)
 	if (!battery)
 		return -ENOMEM;
 
+#if IS_ENABLED(CONFIG_POX_KERNEL)
+	g_sec_battery = battery;
+#endif
+
 	if (pdev->dev.of_node) {
 		pdata = devm_kzalloc(&pdev->dev,
 				sizeof(sec_battery_platform_data_t),
@@ -10708,6 +10768,10 @@ err_bat_free:
 static int sec_battery_remove(struct platform_device *pdev)
 {
 	struct sec_battery_info *battery = platform_get_drvdata(pdev);
+
+#if IS_ENABLED(CONFIG_POX_KERNEL)
+	g_sec_battery = NULL;
+#endif
 #ifndef CONFIG_OF
 	int i;
 #endif
