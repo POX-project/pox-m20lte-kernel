@@ -4,17 +4,11 @@ on:
   push:
     branches: [onyx, main]
   workflow_dispatch:
-    inputs:
-      variant:
-        description: "Variant to build (all, vanilla, apatch, ksu-next)"
-        required: false
-        default: "all"
 
 jobs:
   build:
     name: Build Pox Kernel (${{ matrix.variant }})
     runs-on: ubuntu-22.04
-    if: github.event.inputs.variant == '' || github.event.inputs.variant == 'all' || github.event.inputs.variant == matrix.variant
     strategy:
       fail-fast: false
       matrix:
