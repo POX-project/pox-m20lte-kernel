@@ -18,10 +18,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          # Only the build needs the tree; full history just costs minutes of
+          # clone time on every run.
+          fetch-depth: 1
 
       - name: Install deps (22.04-compatible)
         run: |
+          # Self-hosted runners keep $HOME for the whole session, so the apt
+          # round-trip only has to happen once per VM instead of once per job.
+          if [ -f "$HOME/.m20-deps-ok" ]; then
+            echo "build tools already installed on this runner"
+            exit 0
+          fi
           sudo apt-get update
           sudo apt-get install -y bc bison flex libssl-dev libncurses-dev \
             ccache zip unzip cpio device-tree-compiler lzop libtinfo6 \
@@ -29,6 +37,15 @@ jobs:
           sudo apt-get install -y lib32z1 lib32stdc++6 2>/dev/null || true
           sudo ln -sf /usr/bin/python3 /usr/bin/python 2>/dev/null || true
           which ccache gcc python3 make dtc || true
+          touch "$HOME/.m20-deps-ok"
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          # Shared prefix: ksu-next and apatch reuse vanilla's objects because
+          # ccache hashes content, not the variant name.
+          key: m20-${{ matrix.variant }}
+          max-size: 2G
 
       - name: Show toolchain
         run: |
@@ -84,10 +101,14 @@ jobs:
           export ANDROID_MAJOR_VERSION=r
           export CROSS_COMPILE=$PWD/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin/aarch64-linux-android-
           export CCACHE_DIR=$HOME/.ccache
+          # Without this kbuild calls the compiler directly and ccache is a
+          # no-op (it was installed but never wired in).
+          export CC="ccache ${CROSS_COMPILE}gcc"
 
           mkdir -p out
           make ARCH=arm64 "$DEFCONFIG"
           make ARCH=arm64 -j$(nproc) Image dtbs modules 2>&1 | tee out/build.log
+          ccache -s || true
 
           echo "=== Build Outputs ==="
           ls -lh arch/arm64/boot/Image || true
