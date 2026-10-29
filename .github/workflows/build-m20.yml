@@ -8,11 +8,18 @@ on:
 jobs:
   build:
     name: Build Pox Kernel (${{ matrix.variant }})
-    runs-on: [self-hosted, m20lte]
+    # Each variant is pinned to one runner on purpose: the self-hosted
+    # workspace persists between jobs, so a variant that lands on the same VM
+    # reuses its object tree (17 min -> ~1 min). Letting GitHub pick freely
+    # shuffles variants across VMs and rebuilds from scratch every time.
+    runs-on: [self-hosted, "${{ matrix.runner }}"]
     strategy:
       fail-fast: false
       matrix:
-        variant: [vanilla, apatch, ksu-next]
+        include:
+          - { variant: vanilla,  runner: m20lte-1 }
+          - { variant: apatch,   runner: m20lte-2 }
+          - { variant: ksu-next, runner: m20lte-3 }
 
     steps:
       - name: Checkout
@@ -104,6 +111,9 @@ jobs:
           # Without this kbuild calls the compiler directly and ccache is a
           # no-op (it was installed but never wired in).
           export CC="ccache ${CROSS_COMPILE}gcc"
+          # ccache stats live in the cache dir and are cumulative; zero them so
+          # `ccache -s` below reports this run instead of all time.
+          ccache -z >/dev/null 2>&1 || true
 
           mkdir -p out
           make ARCH=arm64 "$DEFCONFIG"
