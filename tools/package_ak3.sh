@@ -6,7 +6,7 @@ set -euo pipefail
 
 VARIANT="${1:-vanilla}"
 EDITION="${2:-Onyx}"
-ZIP_NAME="${3:-Pox-Kernel-1.0.0-Beta-Onyx-m20lte.zip}"
+ZIP_NAME="${3:-Pox-Kernel-2.0-Onyx-m20lte.zip}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -68,11 +68,11 @@ fi
 
 cat > "$AK_DIR/anykernel.sh" << EOS
 # AnyKernel3 Ramdisk Mod Script
-# Pox Kernel 1.0.0-Beta-${EDITION} for Samsung Galaxy M20 (m20lte) by txorav
+# Pox Kernel 2.0-${EDITION} for Samsung Galaxy M20 (m20lte) by txorav
 
 ### AnyKernel setup
 properties() { '
-kernel.string=Pox Kernel 1.0.0-Beta-${EDITION} for Samsung Galaxy M20 (m20lte) by txorav
+kernel.string=Pox Kernel 2.0-${EDITION} for Samsung Galaxy M20 (m20lte) by txorav
 do.devicecheck=1
 do.modules=0
 do.systemless=1
@@ -112,7 +112,7 @@ fi;
 
 ui_print " ";
 ui_print " ============================================";
-ui_print "   POX KERNEL 1.0.0-BETA [${EDITION}]        ";
+ui_print "   POX KERNEL 2.0 [${EDITION}]        ";
 ui_print "   Samsung Galaxy M20 (universal7885)        ";
 ui_print " ============================================";
 ui_print "  * Engine       : Zero Frame-Drop Gaming Core";

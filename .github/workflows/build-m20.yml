@@ -71,7 +71,7 @@ jobs:
               patch -p1 < patches/apatch.patch
               echo "DEFCONFIG=exynos7885-m20_apatch_defconfig" >> $GITHUB_ENV
               echo "EDITION=Onyx-APatch" >> $GITHUB_ENV
-              echo "ZIP_NAME=Pox-Kernel-1.0.0-Beta-Onyx-APatch-m20lte.zip" >> $GITHUB_ENV
+              echo "ZIP_NAME=Pox-Kernel-2.0-Onyx-APatch-m20lte.zip" >> $GITHUB_ENV
               ;;
             ksu-next)
               echo "Applying KernelSU-Next patch..."
@@ -85,13 +85,13 @@ jobs:
               fi
               echo "DEFCONFIG=exynos7885-m20_ksu_next_defconfig" >> $GITHUB_ENV
               echo "EDITION=Onyx-KSUN" >> $GITHUB_ENV
-              echo "ZIP_NAME=Pox-Kernel-1.0.0-Beta-Onyx-KSUN-m20lte.zip" >> $GITHUB_ENV
+              echo "ZIP_NAME=Pox-Kernel-2.0-Onyx-KSUN-m20lte.zip" >> $GITHUB_ENV
               ;;
             vanilla|*)
               echo "Clean Onyx (Vanilla) build..."
               echo "DEFCONFIG=exynos7885-m20_gsi_defconfig" >> $GITHUB_ENV
               echo "EDITION=Onyx" >> $GITHUB_ENV
-              echo "ZIP_NAME=Pox-Kernel-1.0.0-Beta-Onyx-m20lte.zip" >> $GITHUB_ENV
+              echo "ZIP_NAME=Pox-Kernel-2.0-Onyx-m20lte.zip" >> $GITHUB_ENV
               ;;
           esac
 
@@ -133,7 +133,7 @@ jobs:
       - name: Upload AnyKernel3 flashable zip
         uses: actions/upload-artifact@v4
         with:
-          name: Pox-Kernel-1.0.0-Beta-${{ env.EDITION }}-m20lte-AnyKernel3
+          name: Pox-Kernel-2.0-${{ env.EDITION }}-m20lte-AnyKernel3
           path: dist/${{ env.ZIP_NAME }}
           if-no-files-found: error
 

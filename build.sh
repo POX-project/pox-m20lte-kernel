@@ -30,7 +30,7 @@ case "$ACTION" in
         patch -p1 -N < "$ROOT_DIR/patches/apatch.patch" || true
         DEFCONFIG="exynos7885-m20_apatch_defconfig"
         EDITION="Onyx-APatch"
-        ZIP_NAME="Pox-Kernel-1.0.0-Beta-Onyx-APatch-m20lte.zip"
+        ZIP_NAME="Pox-Kernel-2.0-Onyx-APatch-m20lte.zip"
         ;;
     ksu-next|ksu)
         echo "==> Applying KernelSU-Next patch..."
@@ -44,13 +44,13 @@ case "$ACTION" in
         fi
         DEFCONFIG="exynos7885-m20_ksu_next_defconfig"
         EDITION="Onyx-KSUN"
-        ZIP_NAME="Pox-Kernel-1.0.0-Beta-Onyx-KSUN-m20lte.zip"
+        ZIP_NAME="Pox-Kernel-2.0-Onyx-KSUN-m20lte.zip"
         ;;
     vanilla|*)
         echo "==> Building clean Vanilla (Onyx)..."
         DEFCONFIG="exynos7885-m20_gsi_defconfig"
         EDITION="Onyx"
-        ZIP_NAME="Pox-Kernel-1.0.0-Beta-Onyx-m20lte.zip"
+        ZIP_NAME="Pox-Kernel-2.0-Onyx-m20lte.zip"
         ;;
 esac
 
