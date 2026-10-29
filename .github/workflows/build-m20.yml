@@ -57,7 +57,7 @@ jobs:
               ln -sf ../KernelSU-Next/kernel drivers/kernelsu
               if [ -f ksu-patches/0001-sepolicy-exynos-flex-array.patch ]; then
                 echo "Applying Samsung Exynos flex_array sepolicy patch to KernelSU-Next..."
-                (cd KernelSU-Next && patch -p1 < ../ksu-patches/0001-sepolicy-exynos-flex-array.patch)
+                (cd KernelSU-Next && patch -p1 -N < ../ksu-patches/0001-sepolicy-exynos-flex-array.patch || true)
               fi
               echo "DEFCONFIG=exynos7885-m20_ksu_next_defconfig" >> $GITHUB_ENV
               echo "EDITION=Onyx-KSUN" >> $GITHUB_ENV
