@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     name: Build Pox Kernel (${{ matrix.variant }})
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, m20lte]
     strategy:
       fail-fast: false
       matrix:
