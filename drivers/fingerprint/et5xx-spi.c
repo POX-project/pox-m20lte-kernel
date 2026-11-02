@@ -1399,8 +1399,10 @@ static void etspi_work_func_debug(struct work_struct *work)
 
 static void etspi_enable_debug_timer(void)
 {
+#ifdef CONFIG_POX_DEBUG_FPSENSOR
 	mod_timer(&g_data->dbg_timer,
 		round_jiffies_up(jiffies + FPSENSOR_DEBUG_TIMER_SEC));
+#endif
 }
 
 static void etspi_disable_debug_timer(void)

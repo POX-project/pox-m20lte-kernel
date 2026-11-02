@@ -13,7 +13,7 @@
 
 #include <linux/types.h>
 
-#define POX_KERNEL_VERSION	"1.0.0-Beta-Onyx"
+#define POX_KERNEL_VERSION	"2.0"
 #define POX_DEVICE_NAME		"Samsung Galaxy M20 (m20lte)"
 
 /* Gaming Mode Presets */

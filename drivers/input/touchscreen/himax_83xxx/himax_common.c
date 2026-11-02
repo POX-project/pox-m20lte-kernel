@@ -14,6 +14,9 @@
 */
 
 #include "himax_common.h"
+#if IS_ENABLED(CONFIG_POX_KERNEL)
+#include "../../../misc/pox/pox_core.h"
+#endif
 #include "himax_ic_core.h"
 
 #define TOUCH_PRINT_INFO_DWORK_TIME 30000 /* 30 secs */
@@ -1970,8 +1973,14 @@ int himax_parse_report_points(struct himax_ts_data *ts, int ts_path,
 			D("%s: now parsing[%d]:x=%d, y=%d, w=%d\n", __func__,
 				loop_i, x, y, w);
 
-		if (x >= 0 && x <= ts->pdata->abs_x_max && y >= 0
-			&& y <= ts->pdata->abs_y_max) {
+		int min_w = EN_NoiseFilter ? 6 : 1;
+#if IS_ENABLED(CONFIG_POX_KERNEL)
+		if (pox_touch_sensitivity_get() == 0)
+			min_w += 4;
+#endif
+		if (w >= min_w && !(x == 0 && y == 0)
+			&& x >= 0 && x <= ts->pdata->abs_x_max
+			&& y >= 0 && y <= ts->pdata->abs_y_max) {
 			hx_touch_data->finger_num--;
 
 			g_target_report_data->x[loop_i] = x;
@@ -2009,7 +2018,7 @@ int himax_parse_report_points(struct himax_ts_data *ts, int ts_path,
 		} else {	/* report coordinates */
 			g_target_report_data->x[loop_i] = x;
 			g_target_report_data->y[loop_i] = y;
-			g_target_report_data->w[loop_i] = w;
+			g_target_report_data->w[loop_i] = 0;
 			g_target_report_data->finger_id[loop_i] = 0;
 			ts->pre_finger_data[loop_i][3] = g_target_report_data->mv_cnt[loop_i];
 			g_target_report_data->mv_cnt[loop_i] = 0;
@@ -2385,7 +2394,10 @@ static void himax_finger_report(struct himax_ts_data *ts)
 				hx_touch_data->finger_num);
 	}
 	for (i = 0; i < ts->nFinger_support; i++) {
-		if (g_target_report_data->x[i] >= 0
+		if (g_target_report_data->finger_id[i] != 0
+			&& g_target_report_data->w[i] > 0
+			&& !(g_target_report_data->x[i] == 0 && g_target_report_data->y[i] == 0)
+			&& g_target_report_data->x[i] >= 0
 			&& g_target_report_data->x[i] <= ts->pdata->abs_x_max
 			&& g_target_report_data->y[i] >= 0
 			&& g_target_report_data->y[i] <= ts->pdata->abs_y_max)
@@ -2790,8 +2802,7 @@ static void himax_print_info_work(struct work_struct *work)
 			work_print_info.work);
 
 	himax_print_info(ts);
-
-	schedule_delayed_work(&ts->work_print_info, msecs_to_jiffies(TOUCH_PRINT_INFO_DWORK_TIME));
+	/* Pox: Do not re-arm delayed work continuously to prevent waking CPU and kmsg flooding */
 }
 
 int himax_chip_common_init(void)

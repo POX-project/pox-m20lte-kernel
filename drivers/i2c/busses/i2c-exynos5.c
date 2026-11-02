@@ -323,37 +323,39 @@ static void recover_gpio_pins(struct exynos5_i2c *i2c)
 	unsigned long timeout;
 	struct device_node *np = i2c->adap.dev.of_node;
 
-	dev_err(i2c->dev, "Recover GPIO pins\n");
-
 	gpio_sda = of_get_named_gpio(np, "gpio_sda", 0);
-	if (!gpio_is_valid(gpio_sda)) {
-		dev_err(i2c->dev, "Can't get gpio_sda!!!\n");
-		return ;
-	}
+	if (!gpio_is_valid(gpio_sda))
+		return;
+
 	gpio_scl = of_get_named_gpio(np, "gpio_scl", 0);
-	if (!gpio_is_valid(gpio_scl)) {
-		dev_err(i2c->dev, "Can't get gpio_scl!!!\n");
-		return ;
-	}
+	if (!gpio_is_valid(gpio_scl))
+		return;
+
+	/* Configure as GPIO input to sample actual bus state */
+	gpio_direction_input(gpio_scl);
+	gpio_direction_input(gpio_sda);
+	udelay(10);
 
 	sda_val = gpio_get_value(gpio_sda);
 	scl_val = gpio_get_value(gpio_scl);
 
-	dev_err(i2c->dev, "SDA line : %s, SCL line : %s\n",
+	if (sda_val == 1 && scl_val == 1) {
+		change_i2c_gpio(i2c);
+		return;
+	}
+
+	dev_err(i2c->dev, "Recover GPIO pins: SDA: %s, SCL: %s\n",
 			sda_val ? "HIGH" : "LOW", scl_val ? "HIGH" : "LOW");
 
-	if (sda_val == 1)
-		return ;
-
-	/* Wait for SCL as high for 500msec */
+	/* Wait for SCL as high for up to 10msec */
 	if (scl_val == 0) {
-		timeout = jiffies + msecs_to_jiffies(500);
+		timeout = jiffies + msecs_to_jiffies(10);
 		while (time_before(jiffies, timeout)) {
 			if (gpio_get_value(gpio_scl) != 0) {
 				timeout = 0;
 				break;
 			}
-			msleep(10);
+			udelay(100);
 		}
 		if (timeout)
 			dev_err(i2c->dev, "SCL line is still LOW!!!\n");
@@ -365,8 +367,8 @@ static void recover_gpio_pins(struct exynos5_i2c *i2c)
 		gpio_direction_output(gpio_scl, 1);
 		gpio_direction_input(gpio_sda);
 
-		for (clk_cnt = 0; clk_cnt < 100; clk_cnt++) {
-			/* Make clock for slave */
+		for (clk_cnt = 0; clk_cnt < 16; clk_cnt++) {
+			/* Make clock for slave (standard 9-16 clock recovery sequence) */
 			gpio_set_value(gpio_scl, 0);
 			udelay(5);
 			gpio_set_value(gpio_scl, 1);
@@ -376,7 +378,7 @@ static void recover_gpio_pins(struct exynos5_i2c *i2c)
 				break;
 			}
 		}
-		if (clk_cnt == 100)
+		if (clk_cnt == 16)
 			dev_err(i2c->dev, "SDA line is not recovered!!!\n");
 	}
 
