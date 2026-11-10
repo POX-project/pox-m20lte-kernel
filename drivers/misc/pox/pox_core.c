@@ -35,10 +35,12 @@
 #include <linux/writeback.h>
 #include <linux/mm.h>
 #include <linux/power_supply.h>
-#include <linux/lcd_notify.h>
-#include <linux/dyn_sync_cntrl.h>
+#include <linux/fb.h>
 
 #include "pox_core.h"
+
+/* Dynamic Fsync state */
+static bool dyn_fsync_active = true;
 
 /* RT8547 Flash LED Driver symbols (leds-rt8547.c) */
 extern void rt8547_setGpio(int onoff);
@@ -127,7 +129,7 @@ static struct pox_kprofile_custom_tunables pox_custom_kp = {
 };
 
 static struct delayed_work pox_dynamic_work;
-static struct notifier_block pox_lcd_notif;
+static struct notifier_block pox_fb_notif;
 
 /* Procfs & Sysfs Directory Pointers */
 static struct proc_dir_entry *perfmgr_proc_dir;
@@ -272,22 +274,30 @@ static void pox_dynamic_evaluate(struct work_struct *work)
 	schedule_delayed_work(&pox_dynamic_work, msecs_to_jiffies(8000));
 }
 
-/* LCD Screen Notifier for Auto-KP Power Saver */
-static int pox_lcd_notifier_callback(struct notifier_block *this,
-				     unsigned long event, void *data)
+/* Screen Notifier (FB) for Auto-KP Power Saver */
+static int pox_fb_notifier_callback(struct notifier_block *this,
+				    unsigned long val, void *data)
 {
+	struct fb_event *evdata = data;
+	unsigned int blank;
+
 	if (!kp_auto_mode)
 		return NOTIFY_DONE;
 
-	switch (event) {
-	case LCD_EVENT_OFF_START:
+	if (val != FB_EVENT_BLANK || !evdata || !evdata->data)
+		return NOTIFY_DONE;
+
+	blank = *(int *)evdata->data;
+
+	switch (blank) {
+	case FB_BLANK_POWERDOWN:
 		mutex_lock(&pox_lock);
 		active_profile_before_screen_off = pox_kprofiles_state;
 		pox_kprofiles_state = KPROFILES_BATTERY;
 		pox_memory_preset(GAMING_MODE_POWERSAVE);
 		mutex_unlock(&pox_lock);
 		break;
-	case LCD_EVENT_ON_END:
+	case FB_BLANK_UNBLANK:
 		mutex_lock(&pox_lock);
 		pox_kprofiles_state = active_profile_before_screen_off;
 		if (pox_kprofiles_state == KPROFILES_PERFORMANCE)
@@ -1477,9 +1487,9 @@ static int __init pox_core_init(void)
 {
 	pr_info("Initializing Pox Kernel Core Subsystem for %s...\n", POX_DEVICE_NAME);
 
-	/* 1. Register LCD Screen Notifier */
-	pox_lcd_notif.notifier_call = pox_lcd_notifier_callback;
-	lcd_register_client(&pox_lcd_notif);
+	/* 1. Register Screen Notifier */
+	pox_fb_notif.notifier_call = pox_fb_notifier_callback;
+	fb_register_client(&pox_fb_notif);
 
 	/* 2. Schedule Dynamic Guard Work */
 	INIT_DELAYED_WORK(&pox_dynamic_work, pox_dynamic_evaluate);
@@ -1581,7 +1591,7 @@ static int __init pox_core_init(void)
 static void __exit pox_core_exit(void)
 {
 	cancel_delayed_work_sync(&pox_dynamic_work);
-	lcd_unregister_client(&pox_lcd_notif);
+	fb_unregister_client(&pox_fb_notif);
 
 	if (sound_kobj)
 		kobject_put(sound_kobj);
