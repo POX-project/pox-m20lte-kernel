@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0
+
+menuconfig POX_KERNEL
+	bool "Pox Kernel Core Subsystem"
+	default y
+	help
+	  Enables the Pox Kernel core subsystem providing unified procfs
+	  and sysfs interfaces for Pox Kernel Manager: Gaming Mode,
+	  Kprofiles governor integration, Battery Protection, True Tone
+	  Display calibration, BORE scheduler controls, and atomic Pox Config.

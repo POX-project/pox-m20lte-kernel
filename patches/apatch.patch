@@ -1,0 +1,9 @@
+diff --git a/arch/arm64/configs/m20lte_defconfig b/arch/arm64/configs/m20lte_defconfig
+index 824af8519..9167df381 100644
+--- a/arch/arm64/configs/m20lte_defconfig
++++ b/arch/arm64/configs/m20lte_defconfig
+@@ -677,3 +677,3 @@ CONFIG_EXYNOS7904_M20LTE_SWA_OPEN=y
+ CONFIG_POX_KERNEL=y
+-CONFIG_LOCALVERSION="-Pox-2.1.0-Onyx"
++CONFIG_LOCALVERSION="-Pox-2.1.0-Onyx-APatch"
+ CONFIG_INCREASE_MAXIMUM_SWAPPINESS=y

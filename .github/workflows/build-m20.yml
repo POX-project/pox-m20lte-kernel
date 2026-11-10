@@ -1,0 +1,109 @@
+name: Build Pox Kernel for Samsung Galaxy M20 (m20lte)
+
+on:
+  push:
+    branches: [onyx, main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Pox Kernel (${{ matrix.variant }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [vanilla, apatch]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev libncurses-dev \
+            ccache zip unzip cpio device-tree-compiler lzop libtinfo5 libtinfo6 \
+            gcc make python3 curl gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu || true
+          sudo ln -sf /usr/bin/python3 /usr/bin/python 2>/dev/null || true
+
+      - name: Setup AOSP Clang (r536225 / Clang 19)
+        run: |
+          mkdir -p "$HOME/clang-r536225"
+          echo "Downloading AOSP Clang r536225..."
+          curl -sSL "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r536225.tar.gz" | tar -xz -C "$HOME/clang-r536225"
+          echo "$HOME/clang-r536225/bin" >> $GITHUB_PATH
+          "$HOME/clang-r536225/bin/clang" --version
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: m20-${{ matrix.variant }}
+          max-size: 2G
+
+      - name: Prepare variant (${{ matrix.variant }})
+        run: |
+          set -e
+          case "${{ matrix.variant }}" in
+            apatch)
+              echo "Applying APatch patch..."
+              patch -p1 < patches/apatch.patch
+              echo "DEFCONFIG=m20lte_defconfig" >> $GITHUB_ENV
+              echo "EDITION=Onyx-APatch" >> $GITHUB_ENV
+              echo "ZIP_NAME=Pox-Kernel-2.1-Onyx-APatch-m20lte.zip" >> $GITHUB_ENV
+              ;;
+            vanilla|*)
+              echo "Clean Onyx (Vanilla) build..."
+              echo "DEFCONFIG=m20lte_defconfig" >> $GITHUB_ENV
+              echo "EDITION=Onyx" >> $GITHUB_ENV
+              echo "ZIP_NAME=Pox-Kernel-2.1-Onyx-m20lte.zip" >> $GITHUB_ENV
+              ;;
+          esac
+
+      - name: Build Pox Kernel
+        run: |
+          set -euo pipefail
+          echo "=== Build Parameters ==="
+          echo "Variant: ${{ matrix.variant }}"
+          echo "Defconfig: $DEFCONFIG"
+          echo "Edition: $EDITION"
+
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CC="ccache clang"
+          export CCACHE_DIR=$HOME/.ccache
+          ccache -z >/dev/null 2>&1 || true
+
+          mkdir -p out
+          make ARCH=arm64 "$DEFCONFIG"
+          make ARCH=arm64 -j$(nproc) CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- Image dtbs modules 2>&1 | tee out/build.log
+          ccache -s || true
+
+          echo "=== Build Outputs ==="
+          ls -lh arch/arm64/boot/Image || true
+          find . -maxdepth 4 -name "*.ko" | head
+
+      - name: Package AnyKernel3 + raw Image
+        run: |
+          set -e
+          chmod +x tools/package_ak3.sh
+          bash tools/package_ak3.sh "${{ matrix.variant }}" "$EDITION" "$ZIP_NAME"
+
+      - name: Upload AnyKernel3 flashable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pox-Kernel-2.1-${{ env.EDITION }}-m20lte-AnyKernel3
+          path: dist/${{ env.ZIP_NAME }}
+          if-no-files-found: error
+
+      - name: Upload build outputs and logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-outputs-${{ matrix.variant }}-m20lte
+          path: |
+            dist/Image-m20lte
+            dist/build.log
+            dist/defconfig_used
+          if-no-files-found: warn
