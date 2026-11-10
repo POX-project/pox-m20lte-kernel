@@ -75,9 +75,9 @@ static int pox_opp_guard_enabled = 1;
 static unsigned long pox_brownout_preventions;
 
 static int pox_fast_charge_enabled = 1;
-static int pox_charge_watt_target = 15;
+static int pox_charge_watt_target = 18;
 static int pox_pd_min_watt_val = 5;
-static int pox_pd_max_watt_val = 15;
+static int pox_pd_max_watt_val = 18;
 
 /* Health & OPP Voltage Guard Telemetry */
 static int pox_last_voc_mv = 4100;
@@ -85,12 +85,12 @@ static int pox_last_vload_mv = 3800;
 static int pox_last_sag_mv = 100;
 static int pox_battery_esr_mohm = 120;
 static int pox_brownout_margin_mv = 400;
-static int pox_active_opp_ceiling_khz = 1768000;
+static int pox_active_opp_ceiling_khz = 2184000;
 static int pox_thermal_gradient_mc_s = 50;
 static int pox_battery_bypass_enabled;
 static int pox_battery_limit_val = 100;
 static int pox_thermal_guard_enabled = 1;
-static int pox_temp_limit_c = 45;
+static int pox_temp_limit_c = 55;
 
 static int pox_color_mode_val = COLOR_MODE_REFERENCE;
 static int pox_true_tone_enabled = 1;
@@ -191,8 +191,9 @@ static void pox_health_calibration_sync(void)
 	if (pox_last_sag_mv < 0) pox_last_sag_mv = 0;
 	pox_brownout_margin_mv = pox_last_vload_mv - 3400;
 
-	if (!pox_opp_guard_enabled || pox_health_cal_mode == HEALTH_CAL_DISABLED) {
-		pox_active_opp_ceiling_khz = 1768000;
+	if (!pox_opp_guard_enabled || pox_health_cal_mode == HEALTH_CAL_DISABLED ||
+	    pox_kprofiles_state == KPROFILES_PERFORMANCE || pox_gaming_mode_state >= GAMING_MODE_ENABLED) {
+		pox_active_opp_ceiling_khz = 2184000;
 		return;
 	}
 
@@ -200,37 +201,39 @@ static void pox_health_calibration_sync(void)
 	v_pred = pox_last_voc_mv - (((iload + 1500) * eff_esr) / 1000);
 
 	/* Closed-loop dynamic OPP ceiling & rescue protection for Exynos 7904 */
-	if (vbat < 3480 || v_pred < 3450 || soc <= 15 || pox_health_cal_mode == HEALTH_CAL_LONGEVITY || temp_c >= 45) {
-		pox_active_opp_ceiling_khz = 1352000; /* Safe aged silicon sweet-spot */
-		pox_brownout_preventions++;
-	} else if (vbat < 3580 || v_pred < 3550 || soc <= 25) {
+	if (vbat < 3400 || v_pred < 3350 || soc <= 5 || pox_health_cal_mode == HEALTH_CAL_LONGEVITY || temp_c >= 60) {
 		pox_active_opp_ceiling_khz = 1586000;
-	} else {
+		pox_brownout_preventions++;
+	} else if (vbat < 3500 || v_pred < 3450 || soc <= 10) {
 		pox_active_opp_ceiling_khz = 1768000;
+	} else {
+		pox_active_opp_ceiling_khz = 2184000;
 	}
 }
 
-/* Adaptive Memory Engine for Exynos 7904 */
+/* Adaptive Memory Engine for Exynos 7904 (Android 15 on 3GB RAM) */
 static void pox_memory_preset(int mode)
 {
 	if (mode > 0) {
-		vm_swappiness = 100;
+		/* Performance & Gaming: aggressive ZRAM swap preserves DEX/APK file cache */
+		vm_swappiness = 180;
 		sysctl_vfs_cache_pressure = 50;
 		page_cluster = 0;
 		vm_dirty_ratio = 10;
 		dirty_background_ratio = 5;
 	} else if (mode == GAMING_MODE_POWERSAVE) {
-		vm_swappiness = 60;
-		sysctl_vfs_cache_pressure = 100;
+		vm_swappiness = 100;
+		sysctl_vfs_cache_pressure = 70;
 		page_cluster = 0;
 		vm_dirty_ratio = 20;
 		dirty_background_ratio = 10;
 	} else {
-		vm_swappiness = 100;
+		/* Balanced: optimal high-swappiness prevents Direct Reclaim lag */
+		vm_swappiness = 160;
 		sysctl_vfs_cache_pressure = 50;
 		page_cluster = 0;
-		vm_dirty_ratio = 20;
-		dirty_background_ratio = 10;
+		vm_dirty_ratio = 15;
+		dirty_background_ratio = 5;
 	}
 }
 
@@ -460,7 +463,7 @@ EXPORT_SYMBOL(pox_fast_charge_get);
 
 int pox_charge_watt_set(int watt)
 {
-	watt = clamp(watt, 5, 15);
+	watt = clamp(watt, 5, 18);
 	pox_charge_watt_target = watt;
 #if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
 	{
@@ -480,7 +483,7 @@ EXPORT_SYMBOL(pox_charge_watt_get);
 
 int pox_pd_min_watt_set(int watt)
 {
-	pox_pd_min_watt_val = clamp(watt, 5, 15);
+	pox_pd_min_watt_val = clamp(watt, 5, 18);
 	return 0;
 }
 EXPORT_SYMBOL(pox_pd_min_watt_set);
@@ -493,7 +496,7 @@ EXPORT_SYMBOL(pox_pd_min_watt_get);
 
 int pox_pd_max_watt_set(int watt)
 {
-	pox_pd_max_watt_val = clamp(watt, 5, 15);
+	pox_pd_max_watt_val = clamp(watt, 5, 18);
 	return 0;
 }
 EXPORT_SYMBOL(pox_pd_max_watt_set);

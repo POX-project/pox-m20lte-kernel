@@ -8,18 +8,11 @@ on:
 jobs:
   build:
     name: Build Pox Kernel (${{ matrix.variant }})
-    # Each variant is pinned to one runner on purpose: the self-hosted
-    # workspace persists between jobs, so a variant that lands on the same VM
-    # reuses its object tree (17 min -> ~1 min). Letting GitHub pick freely
-    # shuffles variants across VMs and rebuilds from scratch every time.
-    runs-on: [self-hosted, "${{ matrix.runner }}"]
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { variant: vanilla,  runner: m20lte-1 }
-          - { variant: apatch,   runner: m20lte-2 }
-          - { variant: ksu-next, runner: m20lte-3 }
+        variant: [vanilla, apatch, ksu-next]
 
     steps:
       - name: Checkout
@@ -31,20 +24,13 @@ jobs:
 
       - name: Install deps (22.04-compatible)
         run: |
-          # Self-hosted runners keep $HOME for the whole session, so the apt
-          # round-trip only has to happen once per VM instead of once per job.
-          if [ -f "$HOME/.m20-deps-ok" ]; then
-            echo "build tools already installed on this runner"
-            exit 0
-          fi
           sudo apt-get update
           sudo apt-get install -y bc bison flex libssl-dev libncurses-dev \
-            ccache zip unzip cpio device-tree-compiler lzop libtinfo6 \
+            ccache zip unzip cpio device-tree-compiler lzop libtinfo5 libtinfo6 \
             gcc make python3 curl || true
           sudo apt-get install -y lib32z1 lib32stdc++6 2>/dev/null || true
           sudo ln -sf /usr/bin/python3 /usr/bin/python 2>/dev/null || true
           which ccache gcc python3 make dtc || true
-          touch "$HOME/.m20-deps-ok"
 
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -71,7 +57,7 @@ jobs:
               patch -p1 < patches/apatch.patch
               echo "DEFCONFIG=exynos7885-m20_apatch_defconfig" >> $GITHUB_ENV
               echo "EDITION=Onyx-APatch" >> $GITHUB_ENV
-              echo "ZIP_NAME=Pox-Kernel-2.0-Onyx-APatch-m20lte.zip" >> $GITHUB_ENV
+              echo "ZIP_NAME=Pox-Kernel-2.1-Onyx-APatch-m20lte.zip" >> $GITHUB_ENV
               ;;
             ksu-next)
               echo "Applying KernelSU-Next patch..."
@@ -85,13 +71,13 @@ jobs:
               fi
               echo "DEFCONFIG=exynos7885-m20_ksu_next_defconfig" >> $GITHUB_ENV
               echo "EDITION=Onyx-KSUN" >> $GITHUB_ENV
-              echo "ZIP_NAME=Pox-Kernel-2.0-Onyx-KSUN-m20lte.zip" >> $GITHUB_ENV
+              echo "ZIP_NAME=Pox-Kernel-2.1-Onyx-KSUN-m20lte.zip" >> $GITHUB_ENV
               ;;
             vanilla|*)
               echo "Clean Onyx (Vanilla) build..."
               echo "DEFCONFIG=exynos7885-m20_gsi_defconfig" >> $GITHUB_ENV
               echo "EDITION=Onyx" >> $GITHUB_ENV
-              echo "ZIP_NAME=Pox-Kernel-2.0-Onyx-m20lte.zip" >> $GITHUB_ENV
+              echo "ZIP_NAME=Pox-Kernel-2.1-Onyx-m20lte.zip" >> $GITHUB_ENV
               ;;
           esac
 
@@ -133,7 +119,7 @@ jobs:
       - name: Upload AnyKernel3 flashable zip
         uses: actions/upload-artifact@v4
         with:
-          name: Pox-Kernel-2.0-${{ env.EDITION }}-m20lte-AnyKernel3
+          name: Pox-Kernel-2.1-${{ env.EDITION }}-m20lte-AnyKernel3
           path: dist/${{ env.ZIP_NAME }}
           if-no-files-found: error
 

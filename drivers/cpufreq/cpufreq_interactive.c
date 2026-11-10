@@ -75,7 +75,7 @@ static spinlock_t speedchange_cpumask_lock;
 static struct mutex gov_lock;
 
 /* Target load.  Lower values result in higher CPU speeds. */
-#define DEFAULT_TARGET_LOAD 85
+#define DEFAULT_TARGET_LOAD 70
 static unsigned int default_target_loads[] = {DEFAULT_TARGET_LOAD};
 
 #define DEFAULT_TIMER_RATE (10 * USEC_PER_MSEC)
@@ -87,9 +87,8 @@ struct cpufreq_interactive_tunables {
 	int usage_count;
 	/* Hi speed to bump to from lo speed when load burst (default max) */
 	unsigned int hispeed_freq;
-	/* Go to hi speed when CPU load at or above this value. GrapheneOS: 99
-	 * starved UI threads on 8 cores (never hit 99%); 85 ramps on touch. */
-#define DEFAULT_GO_HISPEED_LOAD 85
+	/* Go to hi speed when CPU load at or above this value. 65% for instant zero-lag ramp. */
+#define DEFAULT_GO_HISPEED_LOAD 65
 	unsigned long go_hispeed_load;
 	/* Target load. Lower values result in higher CPU speeds. */
 	spinlock_t target_loads_lock;
@@ -1332,6 +1331,7 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			tunables->timer_rate = DEFAULT_TIMER_RATE;
 			tunables->boostpulse_duration_val = DEFAULT_MIN_SAMPLE_TIME;
 			tunables->timer_slack_val = DEFAULT_TIMER_SLACK;
+			tunables->io_is_busy = true;
 #ifdef CONFIG_EXYNOS_WD_DVFS
 			tunables->wd_boundary = DEFAULT_WD_BOUNDARY;
 #endif

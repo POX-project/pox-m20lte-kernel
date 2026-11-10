@@ -2,7 +2,7 @@
 
 [![GitHub Repo](https://img.shields.io/badge/GitHub-POX--project%2Fpox--m20lte--kernel-181717.svg?logo=github)](https://github.com/POX-project/pox-m20lte-kernel)
 [![Kernel Version](https://img.shields.io/badge/Kernel-Linux%204.4.177-green.svg?logo=linux)](https://github.com/POX-project/pox-m20lte-kernel)
-[![Pox Release](https://img.shields.io/badge/Pox%20Release-v2.0.0-blue.svg)](https://github.com/POX-project/pox-m20lte-kernel)
+[![Pox Release](https://img.shields.io/badge/Pox%20Release-v2.1.0-blue.svg)](https://github.com/POX-project/pox-m20lte-kernel)
 [![Device](https://img.shields.io/badge/Device-Samsung%20Galaxy%20M20%20(m20lte)-orange.svg?logo=samsung)](https://github.com/POX-project/pox-m20lte-kernel)
 [![SoC](https://img.shields.io/badge/SoC-Samsung%20Exynos%207904%20(universal7885)-red.svg)](https://github.com/POX-project/pox-m20lte-kernel)
 [![Solidarity](https://img.shields.io/badge/Stand%20With-Free%20Palestine%20🇵🇸-red?style=flat&colorA=000000&colorB=007A3D)](https://en.wikipedia.org/wiki/State_of_Palestine)
@@ -94,6 +94,27 @@ The 2.0.0 release upgrades Pox Kernel for the Galaxy M20 into a production-grade
 * **Sensor & Fingerprint Quieting**: Guarded Egis ET5xx SPI debug timers behind `CONFIG_POX_DEBUG_FPSENSOR`, eliminating 11-second periodic work queues.
 * **Unified Single-Source Architecture**: Build-time modular patch sets (`patches/apatch.patch`, `patches/ksu.patch`) applied directly onto a clean `onyx` tree.
 * **Automated CI Matrix on Colab Pool**: Sharded runner builds with dedicated ccache acceleration reducing compile times from 17 minutes to under 60 seconds.
+
+---
+
+### 3. Version 2.1.0 (Zero-Lag Engine, Max Charging Speed & Modern RAM Management)
+> **STATUS: LATEST ACTIVE MAINLINE RELEASE.**
+
+The 2.1.0 release targets absolute performance and lag eradication under Android 15 on 3GB RAM:
+* **Max Charging Speed At All Times**:
+  * **Screen-On Throttling Bypass**: Eliminated Samsung's 900mA / 500mA charging drop when the screen is turned on.
+  * **Thermal SIOP Bypass**: Prevented the kernel from forcing 9V AFC charging down to 5V standard USB upon reaching mild usage temperatures.
+  * **Universal Fast Charging**: Unlocked full 15W–18W rate across QuickCharge, USB-PD, and standard USB charger detection modes on GSIs (up to 2000mA input / 2400mA battery current).
+* **Zero-Lag Interactive Governor & Big Cluster Uncapped**:
+  * Uncapped Exynos 7904 Cortex-A73 Big cluster ceiling to full **2.18 GHz** (2184000 kHz) during gaming and performance profiles.
+  * Slashed `go_hispeed_load` from 85% to **65%** and `target_loads` from 85% to **70%** for instant CPU ramp-up on touches and frame rendering.
+  * Enabled `io_is_busy = true` by default so I/O wait times automatically boost CPU frequency during app launches and database reads.
+* **Modern RAM Management for 3GB Exynos 7904**:
+  * Enabled maximum swappiness (**180**) via `CONFIG_INCREASE_MAXIMUM_SWAPPINESS=y` so cold anonymous memory is aggressively compressed into ZRAM, preserving vital file-backed caches and preventing Direct Reclaim stalls.
+  * Lowered `vfs_cache_pressure` to **50** to keep filesystem metadata and SQLite caches in memory.
+  * Configured `page_cluster = 0` and optimized dirty writeback ratios (`vm_dirty_ratio = 10`, `dirty_background_ratio = 5`).
+* **CI Runner Overhaul**:
+  * Upgraded GitHub Actions workflow to standard `ubuntu-22.04` cloud runners, ensuring instant builds and release artifact generation without waiting for offline self-hosted runners.
 
 ---
 

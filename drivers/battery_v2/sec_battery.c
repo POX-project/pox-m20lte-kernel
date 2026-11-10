@@ -27,6 +27,10 @@
 
 #include <linux/moduleparam.h>
 
+#if IS_ENABLED(CONFIG_POX_KERNEL)
+#include "../misc/pox/pox_core.h"
+#endif
+
 bool sleep_mode = false;
 
 static unsigned int STORE_MODE_CHARGING_MAX = 85;
@@ -443,6 +447,12 @@ static int sec_bat_get_wireless_current(struct sec_battery_info *battery, int in
 static void sec_bat_get_charging_current_by_siop(struct sec_battery_info *battery,
 		int *input_current, int *charging_current)
 {
+#if IS_ENABLED(CONFIG_POX_KERNEL)
+	if (pox_fast_charge_get()) {
+		/* Fast charging at all times: bypass SIOP / screen-on degradation */
+		return;
+	}
+#endif
 	if (battery->pdata->siop_default_power > 0) {
 		if ((battery->max_charge_power > battery->pdata->siop_default_power) &&
 			(battery->siop_level < 100)) {
@@ -686,6 +696,12 @@ extern int muic_afc_set_voltage(int vol);
 #endif
 static void sec_bat_check_afc_temp(struct sec_battery_info *battery, int *input_current, int *charging_current)
 {
+#if IS_ENABLED(CONFIG_POX_KERNEL)
+	if (pox_fast_charge_get()) {
+		/* Enforce 9V AFC without dropping to 5V */
+		return;
+	}
+#endif
 #if defined(CONFIG_HV_MUIC_VOLTAGE_CTRL) || defined(CONFIG_SUPPORT_QC30)
 	if (battery->siop_level >= 100) {
 		if (battery->current_event & SEC_BAT_CURRENT_EVENT_CHG_LIMIT) {
@@ -771,6 +787,12 @@ static void sec_bat_check_afc_temp(struct sec_battery_info *battery, int *input_
 static void sec_bat_chg_temperature_check(struct sec_battery_info *battery,
 				int *input_current, int *charging_current)
 {
+#if IS_ENABLED(CONFIG_POX_KERNEL)
+	if (pox_fast_charge_get()) {
+		/* Allow full fast charging rate without premature thermal clipping */
+		return;
+	}
+#endif
 	if ((battery->siop_level >= 100) &&
 			is_hv_wire_type(battery->cable_type)) {
 		if (!battery->chg_limit &&
@@ -1063,40 +1085,45 @@ static int sec_bat_set_charging_current(struct sec_battery_info *battery)
 
 #if IS_ENABLED(CONFIG_POX_KERNEL)
 		/* Pox Kernel Hardware Charging Specification Enforcement */
-		if (battery->cable_type == SEC_BATTERY_CABLE_USB) {
-			/* AGENTS.md Rule 2: Standard PC USB SDP strictly limited to 500mA */
-			if (input_current > 500)
-				input_current = 500;
-			if (charging_current > 500)
-				charging_current = 500;
-		} else if (pox_battery_bypass_get() && battery->capacity >= 20) {
+		if (pox_battery_bypass_get() && battery->capacity >= 20) {
 			/* Battery Bypass: power phone directly from DC line without charging cell */
 			charging_current = 0;
 		} else if (battery->capacity >= pox_battery_limit_get()) {
 			/* Battery Protect Ceiling reached */
 			charging_current = 0;
 		} else if (!pox_fast_charge_get()) {
-			/* Fast charging disabled: limit to safe standard 5V 1A */
-			if (input_current > 1000)
-				input_current = 1000;
-			if (charging_current > 1000)
-				charging_current = 1000;
+			/* Fast charging disabled: limit standard USB to 500mA, wall charger to 1A */
+			if (battery->cable_type == SEC_BATTERY_CABLE_USB) {
+				if (input_current > 500)
+					input_current = 500;
+				if (charging_current > 500)
+					charging_current = 500;
+			} else {
+				if (input_current > 1000)
+					input_current = 1000;
+				if (charging_current > 1000)
+					charging_current = 1000;
+			}
 		} else {
-			/* Fast charging enabled: calculate target wattage within 15W hardware limit */
-			int watt = clamp(pox_charge_watt_get(), 5, 15);
+			/* Fast charging enabled: enforce max charging speed at all times within hardware limit */
+			int watt = clamp(pox_charge_watt_get(), 5, 18);
 
 			if (is_hv_wire_type(battery->cable_type) ||
 			    battery->cable_type == SEC_BATTERY_CABLE_9V_TA ||
 			    battery->cable_type == SEC_BATTERY_CABLE_QC20 ||
 			    battery->cable_type == SEC_BATTERY_CABLE_PDIC) {
-				/* 9V AFC: W = V * I -> I_in = W * 1000 / 9 */
-				input_current = clamp((watt * 1000) / 9, 500, 1670);
-				/* I_chg = (0.90 * W * 1000) / 4.0V */
+				/* 9V AFC / PD: W = V * I -> I_in = W * 1000 / 9 (up to 1800mA) */
+				input_current = clamp((watt * 1000) / 9, 500, 1800);
+				/* I_chg = (0.90 * W * 1000) / 4.0V (up to 3150mA hardware limit) */
 				charging_current = clamp((900 * watt) / 4, 1000, 3150);
 			} else if (battery->cable_type == SEC_BATTERY_CABLE_TA) {
 				/* 5V TA: I_in = min(2000, W * 1000 / 5) */
 				input_current = clamp((watt * 1000) / 5, 500, 2000);
-				charging_current = clamp((900 * watt) / 4, 1000, 2000);
+				charging_current = clamp((900 * watt) / 4, 1000, 2400);
+			} else {
+				/* USB or GSI generic cable types: unlock full 5V 2A / 2.4A rate */
+				input_current = clamp((watt * 1000) / 5, 500, 2000);
+				charging_current = clamp((900 * watt) / 4, 1000, 2400);
 			}
 		}
 #endif
