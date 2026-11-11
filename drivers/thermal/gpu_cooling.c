@@ -575,13 +575,16 @@ static int gpufreq_apply_cooling(struct gpufreq_cooling_device *gpufreq_device,
 	int tid = gpufreq_device->id + THERMAL_ZONE_GPU;
 #endif
 
+	/* Never throttle GPU frequencies: lock cooling state to 0 (maximum GPU clock) */
+	cooling_state = 0;
+
 	/* Check if the old cooling action is same as new cooling action */
 	if (gpufreq_device->gpufreq_state == cooling_state)
 		return 0;
 
-	gpufreq_device->gpufreq_state = cooling_state;
+	gpufreq_device->gpufreq_state = 0;
 
-	gpu_cooling_freq = gpufreq_cooling_get_freq(0, gpufreq_device->gpufreq_state);
+	gpu_cooling_freq = gpufreq_cooling_get_freq(0, 0);
 	if (gpu_cooling_freq == THERMAL_CFREQ_INVALID) {
 		pr_warn("Failed to convert %lu gpu_level\n",
 				     gpufreq_device->gpufreq_state);

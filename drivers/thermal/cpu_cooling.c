@@ -649,16 +649,15 @@ static int cpufreq_set_cur_state(struct thermal_cooling_device *cdev,
 	int tid = cdev->id;
 #endif
 
-	/* Request state should be less than max_level */
-	if (WARN_ON(state > cpufreq_device->max_level))
-		return -EINVAL;
+	/* Never throttle CPU frequencies: force state 0 (maximum OPP) */
+	state = 0;
 
 	/* Check if the old cooling action is same as new cooling action */
 	if (cpufreq_device->cpufreq_state == state)
 		return 0;
 
-	clip_freq = cpufreq_device->freq_table[state];
-	cpufreq_device->cpufreq_state = state;
+	clip_freq = cpufreq_device->freq_table[0];
+	cpufreq_device->cpufreq_state = 0;
 	cpufreq_device->clipped_freq = clip_freq;
 
 #if defined(CONFIG_SEC_DEBUG_HW_PARAM)
