@@ -110,5 +110,6 @@ int pox_active_mic_set(int mode);
 int pox_active_mic_get(void);
 int pox_vibrator_strength_set(int val);
 int pox_vibrator_strength_get(void);
+void pox_sec_battery_update_charging(void);
 
 #endif /* _POX_CORE_H */

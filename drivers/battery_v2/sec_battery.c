@@ -1177,6 +1177,18 @@ static int sec_bat_set_charging_current(struct sec_battery_info *battery)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_POX_KERNEL)
+void pox_sec_battery_update_charging(void)
+{
+	if (g_sec_battery) {
+		sec_bat_set_charging_current(g_sec_battery);
+		if (g_sec_battery->psy_bat)
+			power_supply_changed(g_sec_battery->psy_bat);
+	}
+}
+EXPORT_SYMBOL_GPL(pox_sec_battery_update_charging);
+#endif
+
 static int sec_bat_set_charge(
 				struct sec_battery_info *battery,
 				int chg_mode)

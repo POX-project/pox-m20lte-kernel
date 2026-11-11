@@ -251,10 +251,7 @@ static void pox_dynamic_evaluate(struct work_struct *work)
 	if (status == POWER_SUPPLY_STATUS_CHARGING && soc >= pox_battery_limit_val) {
 		/* Charge ceiling reached */
 #if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
-		{
-			extern void pox_sec_battery_update_charging(void);
-			pox_sec_battery_update_charging();
-		}
+		pox_sec_battery_update_charging();
 #endif
 	}
 
@@ -417,10 +414,7 @@ int pox_battery_bypass_set(int enable)
 {
 	pox_battery_bypass_enabled = enable ? 1 : 0;
 #if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
-	{
-		extern void pox_sec_battery_update_charging(void);
-		pox_sec_battery_update_charging();
-	}
+	pox_sec_battery_update_charging();
 #endif
 	return 0;
 }
@@ -437,10 +431,7 @@ int pox_battery_limit_set(int limit)
 	limit = clamp(limit, 50, 100);
 	pox_battery_limit_val = limit;
 #if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
-	{
-		extern void pox_sec_battery_update_charging(void);
-		pox_sec_battery_update_charging();
-	}
+	pox_sec_battery_update_charging();
 #endif
 	return 0;
 }
@@ -456,10 +447,7 @@ int pox_fast_charge_set(int enable)
 {
 	pox_fast_charge_enabled = enable ? 1 : 0;
 #if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
-	{
-		extern void pox_sec_battery_update_charging(void);
-		pox_sec_battery_update_charging();
-	}
+	pox_sec_battery_update_charging();
 #endif
 	return 0;
 }
@@ -476,10 +464,7 @@ int pox_charge_watt_set(int watt)
 	watt = clamp(watt, 5, 18);
 	pox_charge_watt_target = watt;
 #if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
-	{
-		extern void pox_sec_battery_update_charging(void);
-		pox_sec_battery_update_charging();
-	}
+	pox_sec_battery_update_charging();
 #endif
 	return 0;
 }
