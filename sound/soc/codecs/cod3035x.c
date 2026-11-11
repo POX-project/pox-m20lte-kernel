@@ -822,6 +822,63 @@ static int mcb2_chop_mode_put(struct snd_kcontrol *kcontrol,
  * SOC_DOUBLE_R: Two bit-fields in 2 different registers are updated
  */
 
+static int cod3035x_ep_vol_get(struct snd_kcontrol *kcontrol,
+			     struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	unsigned int val = snd_soc_read(codec, COD3035X_32_VOL_EP);
+	ucontrol->value.integer.value[0] = (val >> CTVOL_EP_SHIFT) & (BIT(CTVOL_EP_WIDTH) - 1);
+	return 0;
+}
+
+static int cod3035x_ep_vol_put(struct snd_kcontrol *kcontrol,
+			     struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	/*
+	 * User-space mixer writes 0 or 2 to Earphone Volume, causing the earpiece
+	 * to sound very quiet. We override any value with hardware maximum (+12dB, 0x0C)
+	 * and maximum receiver current drive.
+	 */
+	snd_soc_update_bits(codec, COD3035X_32_VOL_EP,
+			    CTVOL_EP_MASK, (0x0C << CTVOL_EP_SHIFT));
+	snd_soc_update_bits(codec, COD3035X_DC_CTRL_EPS,
+			    CTMI_EP_A_MASK | CTMI_EP_P_MASK | CTMI_EP_D_MASK,
+			    (CTMI_EP_A_4_UA << CTMI_EP_A_SHIFT) | (CTMI_EP_P_D_7_UA << CTMI_EP_P_SHIFT) | CTMI_EP_P_D_7_UA);
+	return 1;
+}
+
+static int cod3035x_dac_vol_put(struct snd_kcontrol *kcontrol,
+			      struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct cod3035x_priv *cod3035x = snd_soc_codec_get_drvdata(codec);
+	int ret = snd_soc_put_volsw(kcontrol, ucontrol);
+
+	/*
+	 * Prevent user-space handset/speaker profiles from heavily attenuating DAC gain.
+	 * If no headphones are plugged in, clamp DAC register attenuation to at least 0x38 (+14dB boost)
+	 * so earpiece and speakerphone audio is powerful, crystal-clear, and loud.
+	 */
+	if (!cod3035x->jack_det.jack_det) {
+		unsigned int vl = snd_soc_read(codec, COD3035X_51_DVOLL);
+		unsigned int vr = snd_soc_read(codec, COD3035X_52_DVOLR);
+
+		if (vl > 0x38) {
+			vl = 0x38;
+			snd_soc_write(codec, COD3035X_51_DVOLL, vl);
+		}
+		if (vr > 0x38) {
+			vr = 0x38;
+			snd_soc_write(codec, COD3035X_52_DVOLR, vr);
+		}
+		cod3035x->lvol = vl;
+		cod3035x->rvol = vr;
+	}
+
+	return ret;
+}
+
 /**
  * All the data goes into cod3035x_snd_controls.
  * All path inter-connections goes into cod3035x_dapm_routes
@@ -847,9 +904,10 @@ static const struct snd_kcontrol_new cod3035x_snd_controls[] = {
 			(BIT(AVC_CTVOL_HP_WIDTH) - 1), 0,
 			cod3035x_avc_ctvol_hp_tlv),
 
-	SOC_SINGLE_TLV("Earphone Volume", COD3035X_32_VOL_EP,
+	SOC_SINGLE_EXT_TLV("Earphone Volume", COD3035X_32_VOL_EP,
 			CTVOL_EP_SHIFT,
 			(BIT(CTVOL_EP_WIDTH) - 1), 0,
+			cod3035x_ep_vol_get, cod3035x_ep_vol_put,
 			cod3035x_ctvol_ep_tlv),
 
 	SOC_SINGLE_TLV("ADC Left Gain", COD3035X_47_AVOLL1,
@@ -864,9 +922,11 @@ static const struct snd_kcontrol_new cod3035x_snd_controls[] = {
 			AD_DA_DVOL_SHIFT,
 			AD_DVOL_MAXNUM, 1, cod3035x_dvol_adc_tlv),
 
-	SOC_DOUBLE_R_TLV("DAC Gain", COD3035X_51_DVOLL, COD3035X_52_DVOLR,
+	SOC_DOUBLE_R_EXT_TLV("DAC Gain", COD3035X_51_DVOLL, COD3035X_52_DVOLR,
 			AD_DA_DVOL_SHIFT,
-			DA_DVOL_MAXNUM, 1, cod3035x_dvol_dac_tlv),
+			DA_DVOL_MAXNUM, 1,
+			snd_soc_get_volsw, cod3035x_dac_vol_put,
+			cod3035x_dvol_dac_tlv),
 
 	SOC_DOUBLE_R_TLV("HP Analog Volume AVCBypass",
 			COD3035X_30_VOL_HPL, COD3035X_31_VOL_HPR,
@@ -1293,10 +1353,19 @@ static void cod3035x_dac_mute(struct snd_soc_codec *codec, bool on)
 		dev_dbg(codec->dev, "Mute: lvol = 0xff, rvol = 0xff.\n");
 	}
 	else {
-		snd_soc_write(codec, COD3035X_51_DVOLL, cod3035x->lvol);
-		snd_soc_write(codec, COD3035X_52_DVOLR, cod3035x->rvol);
+		unsigned char lvol = cod3035x->lvol;
+		unsigned char rvol = cod3035x->rvol;
+
+		if (!cod3035x->jack_det.jack_det) {
+			if (lvol > 0x38)
+				lvol = 0x38;
+			if (rvol > 0x38)
+				rvol = 0x38;
+		}
+		snd_soc_write(codec, COD3035X_51_DVOLL, lvol);
+		snd_soc_write(codec, COD3035X_52_DVOLR, rvol);
 		dev_dbg(codec->dev, "Unmute: lvol = 0x%x, rvol = 0x%x.\n",
-				cod3035x->lvol, cod3035x->rvol);
+				lvol, rvol);
 	}
 }
 
