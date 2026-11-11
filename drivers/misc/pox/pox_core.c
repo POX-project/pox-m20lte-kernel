@@ -40,7 +40,8 @@
 #include "pox_core.h"
 
 /* Dynamic Fsync state */
-static bool dyn_fsync_active = true;
+bool dyn_fsync_active = true;
+EXPORT_SYMBOL(dyn_fsync_active);
 
 /* RT8547 Flash LED Driver symbols (leds-rt8547.c) */
 extern void rt8547_setGpio(int onoff);
@@ -69,7 +70,7 @@ EXPORT_SYMBOL(sysctl_sched_burst_cache_lifetime);
 static DEFINE_MUTEX(pox_lock);
 static int pox_gaming_mode_state = GAMING_MODE_EXTREME;
 static int pox_kprofiles_state = KPROFILES_PERFORMANCE;
-static int kp_auto_mode = 0;
+static int kp_auto_mode = 1;
 static int active_profile_before_screen_off = KPROFILES_PERFORMANCE;
 
 static int pox_health_cal_mode = HEALTH_CAL_DISABLED;
@@ -116,12 +117,12 @@ static int pox_active_mic_val;
 static int pox_vibrator_strength_val = 85;
 
 static struct pox_kprofile_custom_tunables pox_custom_kp = {
-	.schedutil_up_little_us = 200,
+	.schedutil_up_little_us = 100,
 	.schedutil_down_little_us = 30000,
-	.schedutil_up_big_us = 100,
+	.schedutil_up_big_us = 50,
 	.schedutil_down_big_us = 30000,
-	.top_app_boost = 40,
-	.fg_boost = 15,
+	.top_app_boost = 50,
+	.fg_boost = 25,
 	.gpu_boost = 1,
 	.dram_boost = 1,
 	.touch_boost = 1,
@@ -271,15 +272,12 @@ static void pox_dynamic_evaluate(struct work_struct *work)
 	schedule_delayed_work(&pox_dynamic_work, msecs_to_jiffies(8000));
 }
 
-/* Screen Notifier (FB) for Auto-KP Power Saver */
+/* Screen Notifier (FB) for Auto-KP & Dynamic Fsync */
 static int pox_fb_notifier_callback(struct notifier_block *this,
 				    unsigned long val, void *data)
 {
 	struct fb_event *evdata = data;
 	unsigned int blank;
-
-	if (!kp_auto_mode)
-		return NOTIFY_DONE;
 
 	if (val != FB_EVENT_BLANK || !evdata || !evdata->data)
 		return NOTIFY_DONE;
@@ -288,20 +286,24 @@ static int pox_fb_notifier_callback(struct notifier_block *this,
 
 	switch (blank) {
 	case FB_BLANK_POWERDOWN:
-		mutex_lock(&pox_lock);
-		active_profile_before_screen_off = pox_kprofiles_state;
-		pox_kprofiles_state = KPROFILES_BATTERY;
-		pox_memory_preset(GAMING_MODE_POWERSAVE);
-		mutex_unlock(&pox_lock);
+		dyn_fsync_active = false;
+		if (kp_auto_mode) {
+			mutex_lock(&pox_lock);
+			active_profile_before_screen_off = pox_kprofiles_state;
+			pox_kprofiles_state = KPROFILES_BATTERY;
+			pox_memory_preset(GAMING_MODE_POWERSAVE);
+			mutex_unlock(&pox_lock);
+		}
 		break;
 	case FB_BLANK_UNBLANK:
-		mutex_lock(&pox_lock);
-		pox_kprofiles_state = active_profile_before_screen_off;
-		if (pox_kprofiles_state == KPROFILES_PERFORMANCE)
-			pox_memory_preset(GAMING_MODE_ENABLED);
-		else
-			pox_memory_preset(GAMING_MODE_DISABLED);
-		mutex_unlock(&pox_lock);
+		dyn_fsync_active = true;
+		if (kp_auto_mode) {
+			mutex_lock(&pox_lock);
+			pox_kprofiles_state = KPROFILES_PERFORMANCE;
+			pox_gaming_mode_state = GAMING_MODE_EXTREME;
+			pox_memory_preset(GAMING_MODE_EXTREME);
+			mutex_unlock(&pox_lock);
+		}
 		break;
 	default:
 		break;

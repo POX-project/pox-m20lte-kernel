@@ -10,7 +10,7 @@
 */
 
 &mali {
-	interactive_info = <1001000 70 0>;
+	interactive_info = <1001000 40 0>;
 	gpu_dvfs_table_size = <9 7>; /*<row col>*/
 	                /* clk     min max  down mif_min  lit_min big_max */
 	gpu_dvfs_table = < 1300000 98  100  1    1794000  1586000 0
@@ -24,6 +24,12 @@
 	                    343000 65   90  1     420000   449000 0 >;
 	gpu_max_clock = <1300000>;
 	gpu_max_clock_limit = <1300000>;
+	gpu_min_clock = <676000>;
+	gpu_dvfs_start_clock = <1001000>;
+	gpu_dvfs_bl_config_clock = <1001000>;
+	gpu_boost_gpu_min_lock = <845000>;
+	gpu_dvfs_time_interval = <2>;
+	gpu_dvfs_polling_time = <10>;
 	gpu_temp_throttling_level_num = <6>;
 	gpu_temp_throttling = <1300000 1300000 1300000 1200000 1100000 1001000>;
 };

@@ -1961,8 +1961,14 @@
 	};
 
 	cpufreq {
+		domain@0 {
+			min-freq = <1144000>;
+			user-default-qos = <1586000>;
+		};
 		domain@1 {
+			min-freq = <1768000>;
 			max-freq = <2184000>;
+			user-default-qos = <2184000>;
 		};
 	};
 };
