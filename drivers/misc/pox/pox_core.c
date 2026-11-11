@@ -217,22 +217,22 @@ static void pox_health_calibration_sync(void)
 static void pox_memory_preset(int mode)
 {
 	if (mode > 0) {
-		/* Extreme Performance & Gaming: maximum swappiness to ZRAM, lock APK/DEX pages */
-		vm_swappiness = 200;
-		sysctl_vfs_cache_pressure = 30;
+		/* Extreme Performance & Gaming: balanced 100 swappiness (anon:file = 1:1) prevents ZRAM thrash */
+		vm_swappiness = 100;
+		sysctl_vfs_cache_pressure = 100;
 		page_cluster = 0;
 		vm_dirty_ratio = 10;
 		dirty_background_ratio = 5;
 	} else if (mode == GAMING_MODE_POWERSAVE) {
-		vm_swappiness = 120;
-		sysctl_vfs_cache_pressure = 60;
+		vm_swappiness = 60;
+		sysctl_vfs_cache_pressure = 100;
 		page_cluster = 0;
 		vm_dirty_ratio = 20;
 		dirty_background_ratio = 10;
 	} else {
-		/* Balanced: aggressive swappiness prevents Direct Reclaim UI stutter */
-		vm_swappiness = 180;
-		sysctl_vfs_cache_pressure = 40;
+		/* Balanced: optimal 80 swappiness allows smooth page cache reclamation without stalling UI */
+		vm_swappiness = 80;
+		sysctl_vfs_cache_pressure = 100;
 		page_cluster = 0;
 		vm_dirty_ratio = 15;
 		dirty_background_ratio = 5;

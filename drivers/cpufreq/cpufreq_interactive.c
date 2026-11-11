@@ -74,11 +74,11 @@ static cpumask_t speedchange_cpumask;
 static spinlock_t speedchange_cpumask_lock;
 static struct mutex gov_lock;
 
-/* Target load. Lower values result in higher CPU speeds. (60% for zero-lag responsiveness) */
-#define DEFAULT_TARGET_LOAD 60
+/* Target load.  Lower values result in higher CPU speeds. */
+#define DEFAULT_TARGET_LOAD 70
 static unsigned int default_target_loads[] = {DEFAULT_TARGET_LOAD};
 
-#define DEFAULT_TIMER_RATE (10 * USEC_PER_MSEC)
+#define DEFAULT_TIMER_RATE (20 * USEC_PER_MSEC)
 #define DEFAULT_ABOVE_HISPEED_DELAY DEFAULT_TIMER_RATE
 static unsigned int default_above_hispeed_delay[] = {
 	DEFAULT_ABOVE_HISPEED_DELAY };
@@ -87,8 +87,8 @@ struct cpufreq_interactive_tunables {
 	int usage_count;
 	/* Hi speed to bump to from lo speed when load burst (default max) */
 	unsigned int hispeed_freq;
-	/* Go to hi speed when CPU load at or above this value. 50% for instant zero-lag ramp. */
-#define DEFAULT_GO_HISPEED_LOAD 50
+	/* Go to hi speed when CPU load at or above this value. 65% for instant zero-lag ramp. */
+#define DEFAULT_GO_HISPEED_LOAD 65
 	unsigned long go_hispeed_load;
 	/* Target load. Lower values result in higher CPU speeds. */
 	spinlock_t target_loads_lock;

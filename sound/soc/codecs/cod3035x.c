@@ -2281,10 +2281,16 @@ static int epdrv_ev(struct snd_soc_dapm_widget *w,
 	hp_on = chop_val & EN_HP_CHOP_MASK;
 	ep_on = chop_val & EN_EP_CHOP_MASK;
 
-	if (!ep_on) {
-		dev_dbg(codec->dev, "%s called but ear-piece not enabled\n",
-				__func__);
+	if (hp_on) {
+		/* Headphone connected: do not drive earpiece */
 		return 0;
+	}
+
+	if (!ep_on) {
+		/* Auto-enable earpiece chop for dual-speaker stereo speakerphone */
+		snd_soc_update_bits(codec, COD3035X_77_CHOP_DA,
+				EN_EP_CHOP_MASK, EN_EP_CHOP_MASK);
+		ep_on = 1;
 	}
 
 	dev_dbg(codec->dev, "%s called, event = %d\n", __func__, event);
@@ -2303,6 +2309,13 @@ static int epdrv_ev(struct snd_soc_dapm_widget *w,
 
 		snd_soc_update_bits(codec, COD3035X_38_MIX_DA2,
 				EN_EP_MIX_DCTL_MASK, EN_EP_MIX_DCTL_MASK);
+
+		/* Boost ear speaker volume to maximum (+12dB analog gain) and drive current */
+		snd_soc_update_bits(codec, COD3035X_32_VOL_EP,
+				CTVOL_EP_MASK, (0x0C << CTVOL_EP_SHIFT));
+		snd_soc_update_bits(codec, COD3035X_DC_CTRL_EPS,
+				CTMI_EP_A_MASK | CTMI_EP_P_MASK | CTMI_EP_D_MASK,
+				(CTMI_EP_A_4_UA << CTMI_EP_A_SHIFT) | (CTMI_EP_P_D_7_UA << CTMI_EP_P_SHIFT) | CTMI_EP_P_D_7_UA);
 
 		msleep(136);
 
@@ -2326,7 +2339,7 @@ static int epdrv_ev(struct snd_soc_dapm_widget *w,
 		snd_soc_update_bits(codec, COD3035X_78_CTRL_CP,
 			CTMF_CP_CLK_MASK, CTMF_CP_CLK_780KHZ << CTMF_CP_CLK_SHIFT);
 
-		snd_soc_write(codec, COD3035X_32_VOL_EP, 0x06);
+		snd_soc_write(codec, COD3035X_32_VOL_EP, (0x0C << CTVOL_EP_SHIFT));
 
 		/* damping back the DC offset
 		* 0xD7 : DC offset
@@ -2798,7 +2811,7 @@ static const struct snd_soc_dapm_widget cod3035x_dapm_widgets[] = {
 static const struct snd_soc_dapm_route cod3035x_dapm_routes[] = {
 	/* Sink, Control, Source */
 	{"EPDRV", NULL, "DAC"},
-	{"EP", "EP On", "EPDRV"},
+	{"EP", NULL, "EPDRV"},
 	{"EPOUTN", NULL, "EP"},
 
 	{"HPDRV", NULL, "DAC"},
