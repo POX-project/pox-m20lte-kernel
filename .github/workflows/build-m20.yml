@@ -38,9 +38,11 @@ jobs:
 
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
+        continue-on-error: true
         with:
           key: m20-${{ matrix.variant }}
           max-size: 2G
+          create-symlink: false
 
       - name: Prepare variant (${{ matrix.variant }})
         run: |

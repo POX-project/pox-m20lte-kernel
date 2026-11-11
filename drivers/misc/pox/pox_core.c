@@ -67,13 +67,13 @@ EXPORT_SYMBOL(sysctl_sched_burst_cache_lifetime);
 
 /* State Variables */
 static DEFINE_MUTEX(pox_lock);
-static int pox_gaming_mode_state = GAMING_MODE_ENABLED;
+static int pox_gaming_mode_state = GAMING_MODE_EXTREME;
 static int pox_kprofiles_state = KPROFILES_PERFORMANCE;
-static int kp_auto_mode = 1;
+static int kp_auto_mode = 0;
 static int active_profile_before_screen_off = KPROFILES_PERFORMANCE;
 
-static int pox_health_cal_mode = HEALTH_CAL_AUTO;
-static int pox_opp_guard_enabled = 1;
+static int pox_health_cal_mode = HEALTH_CAL_DISABLED;
+static int pox_opp_guard_enabled = 0;
 static unsigned long pox_brownout_preventions;
 
 static int pox_fast_charge_enabled = 1;
@@ -91,8 +91,8 @@ static int pox_active_opp_ceiling_khz = 2184000;
 static int pox_thermal_gradient_mc_s = 50;
 static int pox_battery_bypass_enabled;
 static int pox_battery_limit_val = 100;
-static int pox_thermal_guard_enabled = 1;
-static int pox_temp_limit_c = 55;
+static int pox_thermal_guard_enabled = 0;
+static int pox_temp_limit_c = 75;
 
 static int pox_color_mode_val = COLOR_MODE_REFERENCE;
 static int pox_true_tone_enabled = 1;
@@ -116,12 +116,12 @@ static int pox_active_mic_val;
 static int pox_vibrator_strength_val = 85;
 
 static struct pox_kprofile_custom_tunables pox_custom_kp = {
-	.schedutil_up_little_us = 500,
-	.schedutil_down_little_us = 20000,
-	.schedutil_up_big_us = 200,
-	.schedutil_down_big_us = 20000,
-	.top_app_boost = 20,
-	.fg_boost = 5,
+	.schedutil_up_little_us = 200,
+	.schedutil_down_little_us = 30000,
+	.schedutil_up_big_us = 100,
+	.schedutil_down_big_us = 30000,
+	.top_app_boost = 40,
+	.fg_boost = 15,
 	.gpu_boost = 1,
 	.dram_boost = 1,
 	.touch_boost = 1,
