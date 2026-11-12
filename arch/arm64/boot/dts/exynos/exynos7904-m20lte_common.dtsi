@@ -1961,14 +1961,24 @@
 	};
 
 	cpufreq {
+		/*
+		 * domain@0 = CPU 0-5 (Cortex-A53 little cluster) -> ACPM_DVFS_CPUCL1
+		 *   real OPP ladder: 1599000 1352000 1001000 598000 385125
+		 * domain@1 = CPU 6-7 (Cortex-A73 big cluster)   -> ACPM_DVFS_CPUCL0
+		 *   real OPP ladder: 2192666 1698666 1300000 747500 476666
+		 *
+		 * Frequencies must exist in the ACPM DVFS ladder, otherwise the
+		 * request is silently coerced and the governor ends up oscillating
+		 * between unrelated OPPs (visible as lag / stutter).
+		 */
 		domain@0 {
-			min-freq = <1144000>;
-			user-default-qos = <1586000>;
+			min-freq = <1001000>;
+			user-default-qos = <1599000>;
 		};
 		domain@1 {
-			min-freq = <1768000>;
-			max-freq = <2184000>;
-			user-default-qos = <2184000>;
+			min-freq = <1698666>;
+			max-freq = <2192666>;
+			user-default-qos = <2192666>;
 		};
 	};
 };
