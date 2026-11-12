@@ -439,12 +439,8 @@ static int sec_bat_get_wireless_current(struct sec_battery_info *battery, int in
 static void sec_bat_get_charging_current_by_siop(struct sec_battery_info *battery,
 		int *input_current, int *charging_current)
 {
-#if IS_ENABLED(CONFIG_POX_KERNEL)
-	if (pox_fast_charge_get()) {
-		/* Fast charging at all times: bypass SIOP / screen-on degradation */
-		return;
-	}
-#endif
+	/* User request: max performance at all times, no downs even in charging */
+	return;
 	if (battery->pdata->siop_default_power > 0) {
 		if ((battery->max_charge_power > battery->pdata->siop_default_power) &&
 			(battery->siop_level < 100)) {
@@ -652,12 +648,8 @@ extern int muic_afc_set_voltage(int vol);
 #endif
 static void sec_bat_check_afc_temp(struct sec_battery_info *battery, int *input_current, int *charging_current)
 {
-#if IS_ENABLED(CONFIG_POX_KERNEL)
-	if (pox_fast_charge_get()) {
-		/* Enforce 9V AFC without dropping to 5V */
-		return;
-	}
-#endif
+	/* User request: max performance at all times, no downs even in charging */
+	return;
 #if defined(CONFIG_HV_MUIC_VOLTAGE_CTRL) || defined(CONFIG_SUPPORT_QC30)
 	if (battery->siop_level >= 100) {
 		if (battery->current_event & SEC_BAT_CURRENT_EVENT_CHG_LIMIT) {
@@ -803,21 +795,8 @@ static bool sec_bat_change_vbus_pd(struct sec_battery_info *battery, int *input_
 
 static void sec_bat_check_pdic_temp(struct sec_battery_info *battery, int *input_current, int *charging_current)
 {
-	if (battery->pdic_ps_rdy && battery->siop_level >= 100 && !battery->lcd_status) {
-		if ((!battery->chg_limit && (battery->chg_temp >= battery->pdata->chg_high_temp)) ||
-			(battery->chg_limit && (battery->chg_temp >= battery->pdata->chg_high_temp_recovery))) {
-			*input_current =
-				(battery->pdata->chg_input_limit_current * SEC_INPUT_VOLTAGE_9V) / battery->input_voltage;
-			*charging_current = battery->pdata->chg_charging_limit_current;
-			battery->chg_limit = true;
-		} else if (battery->chg_limit && battery->chg_temp <= battery->pdata->chg_high_temp_recovery) {
-			*input_current = battery->pdata->charging_current[battery->cable_type].input_current_limit;
-			*charging_current = battery->pdata->charging_current[battery->cable_type].fast_charging_current;
-			battery->chg_limit = false;
-		}
-		pr_info("%s: cable_type(%d), chg_limit(%d)\n", __func__,
-			battery->cable_type, battery->chg_limit);
-	}
+	/* User request: max performance at all times, no downs even in charging */
+	return;
 }
 
 static int sec_bat_check_pd_input_current(struct sec_battery_info *battery, int input_current)
