@@ -343,6 +343,19 @@ int gpu_dvfs_governor_setting(struct exynos_context *platform, int governor_type
 	platform->table_size = (u32)gpu_get_attrib_data(platform->attrib, GPU_GOVERNOR_TABLE_SIZE_DEFAULT);
 	platform->step = gpu_dvfs_get_level(platform->gpu_dvfs_start_clock);
 #endif /* CONFIG_MALI_DVFS */
+	/*
+	 * gpu_dvfs_get_level() returns -1 when the requested clock is not present
+	 * in platform->table[] (e.g. a DTS row the silicon cannot produce).
+	 * Dereferencing platform->table[-1] would read out of bounds, so clamp to
+	 * a valid index instead of trusting the lookup blindly.
+	 */
+	if (platform->step < 0 || platform->step >= platform->table_size) {
+		GPU_LOG(DVFS_ERROR, DUMMY, 0u, 0u,
+				"%s: start clock %d not in DVFS table (size %d), clamping to level 0\n",
+				__func__, platform->gpu_dvfs_start_clock, platform->table_size);
+		platform->step = 0;
+	}
+
 	platform->cur_clock = platform->table[platform->step].clock;
 
 	spin_unlock_irqrestore(&platform->gpu_dvfs_spinlock, flags);
