@@ -47,7 +47,18 @@
 	};
 
 	chosen {
-		bootargs = "console=ram root=/dev/ram0 clk_ignore_unused androidboot.hardware=samsungexynos7885 androidboot.selinux=permissive ess_setup=0x86000000 androidboot.debug_level=0x4948";
+		/*
+		 * volt_offset_percent=3
+		 *   Overclock voltage headroom. fvmap.c:check_percent_margin() adds
+		 *   3% (rounded down to the 6250uV PMIC step) to EVERY ACPM DVFS
+		 *   operating point at boot. The stock voltages are stamped in
+		 *   bootloader SRAM and cannot be rebuilt in the kernel tree, so this
+		 *   is the supported way to make the top CPU/GPU/bus OPPs hold their
+		 *   frequency under sustained load instead of sagging, which is what
+		 *   previously showed up as stutter. All regulators here cap at
+		 *   1.30V and 3% keeps every OPP comfortably below that ceiling.
+		 */
+		bootargs = "console=ram root=/dev/ram0 clk_ignore_unused volt_offset_percent=3 androidboot.hardware=samsungexynos7885 androidboot.selinux=permissive ess_setup=0x86000000 androidboot.debug_level=0x4948";
 		linux,initrd-start = <0x84000000>;
 		linux,initrd-end = <0x840FFFFF>;
 	};

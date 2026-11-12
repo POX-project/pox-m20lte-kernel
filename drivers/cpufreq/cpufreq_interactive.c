@@ -1332,7 +1332,19 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			tunables->boostpulse_duration_val = DEFAULT_MIN_SAMPLE_TIME;
 			tunables->timer_slack_val = DEFAULT_TIMER_SLACK;
 			tunables->io_is_busy = true;
-			tunables->boost_val = 1;
+			/*
+			 * Do NOT pin boost_val here. boost_val=1 makes tunables->boosted
+			 * permanently true, which forces every sample to at least
+			 * hispeed_freq (= policy->max), i.e. the CPU stays at maximum
+			 * clock 100% of the time even when idle. On this 14nm SoC that
+			 * produces constant maximum heat, and once the SoC cannot shed
+			 * it the hardware ends up frame-dropping - the exact stutter the
+			 * overclock was meant to remove. Responsiveness is provided
+			 * instead by the very low go_hispeed_load (25%) and 5ms timer
+			 * rate below, which ramp to the top OPP within one tick while
+			 * still letting the little cluster settle when nothing runs.
+			 */
+			tunables->boost_val = 0;
 #ifdef CONFIG_EXYNOS_WD_DVFS
 			tunables->wd_boundary = DEFAULT_WD_BOUNDARY;
 #endif
