@@ -901,13 +901,15 @@ static void nvt_ts_work_func(struct work_struct *work)
 #endif /* #if NVT_TOUCH_ESD_PROTECT */
 			input_x = (uint32_t)(point_data[position + 1] << 4) + (uint32_t) (point_data[position + 3] >> 4);
 			input_y = (uint32_t)(point_data[position + 2] << 4) + (uint32_t) (point_data[position + 3] & 0x0F);
-			if ((input_x < 0) || (input_y < 0))
+			/* Ghost touch filter: discard origin phantom coords and out of bounds */
+			if ((input_x <= 0) || (input_y <= 0))
 				continue;
 			if ((input_x > ts->abs_x_max) || (input_y > ts->abs_y_max))
 				continue;
 			input_w = (uint32_t)(point_data[position + 4]);
-			if (input_w == 0)
-				input_w = 1;
+			/* Filter electrical noise spikes and saturation artifacts */
+			if (input_w < 5 || input_w > 250)
+				continue;
 			if (i < 2) {
 				input_p = (uint32_t)(point_data[position + 5]) + (uint32_t)(point_data[i + 63] << 8);
 				if (input_p > TOUCH_FORCE_NUM)

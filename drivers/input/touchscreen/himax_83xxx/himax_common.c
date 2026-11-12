@@ -1970,8 +1970,13 @@ int himax_parse_report_points(struct himax_ts_data *ts, int ts_path,
 			D("%s: now parsing[%d]:x=%d, y=%d, w=%d\n", __func__,
 				loop_i, x, y, w);
 
-		if (x >= 0 && x <= ts->pdata->abs_x_max && y >= 0
-			&& y <= ts->pdata->abs_y_max) {
+		/*
+		 * Permanent ghost touch prevention:
+		 * Discard noise artifacts where width is below contact threshold (w < 5),
+		 * saturation noise (w > 250), or invalid origin point (x == 0 && y == 0).
+		 */
+		if (x > 0 && x <= ts->pdata->abs_x_max && y > 0
+			&& y <= ts->pdata->abs_y_max && w >= 5 && w <= 250) {
 			hx_touch_data->finger_num--;
 
 			g_target_report_data->x[loop_i] = x;
@@ -2007,9 +2012,9 @@ int himax_parse_report_points(struct himax_ts_data *ts, int ts_path,
 			ts->pre_finger_mask =
 				ts->pre_finger_mask + (1 << loop_i);
 		} else {	/* report coordinates */
-			g_target_report_data->x[loop_i] = x;
-			g_target_report_data->y[loop_i] = y;
-			g_target_report_data->w[loop_i] = w;
+			g_target_report_data->x[loop_i] = 0;
+			g_target_report_data->y[loop_i] = 0;
+			g_target_report_data->w[loop_i] = 0;
 			g_target_report_data->finger_id[loop_i] = 0;
 			ts->pre_finger_data[loop_i][3] = g_target_report_data->mv_cnt[loop_i];
 			g_target_report_data->mv_cnt[loop_i] = 0;
@@ -2021,10 +2026,8 @@ int himax_parse_report_points(struct himax_ts_data *ts, int ts_path,
 #ifdef HX_SP_INFO
 			/*Calculate with major/minor for SEC*/
 			/* leave: Val will be 0, because the hx_sp_info_buf will be 255.*/
-			g_target_report_data->major[loop_i] = ic_data->HX_Y_RES / ic_data->HX_RX_NUM *
-								hx_touch_data->hx_sp_info_buf[HX_EVENT_STCK_HEADR + loop_i * 2];
-			g_target_report_data->minor[loop_i] = ic_data->HX_X_RES / ic_data->HX_TX_NUM *
-								hx_touch_data->hx_sp_info_buf[HX_EVENT_STCK_HEADR + loop_i * 2 + 1];
+			g_target_report_data->major[loop_i] = 0;
+			g_target_report_data->minor[loop_i] = 0;
 #endif
 		}
 	}
@@ -2376,6 +2379,7 @@ static void himax_finger_report(struct himax_ts_data *ts)
 {
 	int i = 0;
 	bool valid = false;
+	int active_fingers = 0;
 
 	if (g_ts_dbg != 0) {
 		input_info(true, &ts->client->dev, "%s %s:start\n",
@@ -2385,13 +2389,23 @@ static void himax_finger_report(struct himax_ts_data *ts)
 				hx_touch_data->finger_num);
 	}
 	for (i = 0; i < ts->nFinger_support; i++) {
-		if (g_target_report_data->x[i] >= 0
+		/*
+		 * Strict ghost touch filter:
+		 * Finger must be actively tracked, within valid screen coordinates,
+		 * and satisfy width/pressure thresholds.
+		 */
+		if (g_target_report_data->finger_id[i] == 1
+			&& g_target_report_data->x[i] > 0
 			&& g_target_report_data->x[i] <= ts->pdata->abs_x_max
-			&& g_target_report_data->y[i] >= 0
-			&& g_target_report_data->y[i] <= ts->pdata->abs_y_max)
+			&& g_target_report_data->y[i] > 0
+			&& g_target_report_data->y[i] <= ts->pdata->abs_y_max
+			&& g_target_report_data->w[i] >= 5
+			&& g_target_report_data->w[i] <= 250) {
 			valid = true;
-		else
+			active_fingers++;
+		} else {
 			valid = false;
+		}
 		if (g_ts_dbg != 0)
 			input_info(true, &ts->client->dev, "%s valid=%d\n",
 					HIMAX_LOG_TAG, valid);
@@ -2404,8 +2418,7 @@ static void himax_finger_report(struct himax_ts_data *ts)
 #ifndef	HX_PROTOCOL_A
 			input_mt_slot(ts->input_dev, i);
 #endif
-			input_report_key(ts->input_dev, BTN_TOUCH,
-					g_target_report_data->finger_on);
+			input_report_key(ts->input_dev, BTN_TOUCH, 1);
 			input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR,
 					g_target_report_data->w[i]);
 #ifndef	HX_PROTOCOL_A
@@ -2450,8 +2463,9 @@ static void himax_finger_report(struct himax_ts_data *ts)
 		}
 	}
 
+	/* Never leave BTN_TOUCH asserted if no active fingers were reported */
 	input_report_key(ts->input_dev, BTN_TOUCH,
-			g_target_report_data->finger_on);
+			active_fingers > 0 ? 1 : 0);
 	input_sync(ts->input_dev);
 
 	if (g_ts_dbg != 0)
@@ -2491,21 +2505,18 @@ static void himax_finger_leave(struct himax_ts_data *ts)
 	input_mt_sync(ts->input_dev);
 #endif
 
+	/* Explicitly clear every slot on finger leave to avoid hanging slots */
 	for (loop_i = 0; loop_i < ts->nFinger_support; loop_i++) {
-		if (((ts->pre_finger_mask >> loop_i) & 1) == 1) {
-			input_mt_slot(ts->input_dev, loop_i);
-			input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, 0);
-			input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, 0);
-			input_report_abs(ts->input_dev, ABS_MT_WIDTH_MINOR, 0);
-			input_report_abs(ts->input_dev, ABS_MT_PRESSURE, 0);
-			input_mt_report_slot_state(ts->input_dev,
-							MT_TOOL_FINGER, 0);
-		}
+		input_mt_slot(ts->input_dev, loop_i);
+		input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, 0);
+		input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, 0);
+		input_report_abs(ts->input_dev, ABS_MT_WIDTH_MINOR, 0);
+		input_report_abs(ts->input_dev, ABS_MT_PRESSURE, 0);
+		input_mt_report_slot_state(ts->input_dev,
+						MT_TOOL_FINGER, 0);
 	}
 
-	if (ts->pre_finger_mask > 0) {
-		ts->pre_finger_mask = 0;
-	}
+	ts->pre_finger_mask = 0;
 
 	if (ts->first_pressed == 1) {
 		ts->first_pressed = 2;

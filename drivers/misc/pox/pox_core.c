@@ -325,7 +325,7 @@ int pox_gaming_mode_set(int mode)
 		pox_kprofiles_state = KPROFILES_PERFORMANCE;
 		dyn_fsync_active = true;
 		pox_touch_game_mode_val = 1;
-		pox_touch_sensitivity_val = 2;
+		pox_touch_sensitivity_val = 1;
 	} else if (mode == GAMING_MODE_POWERSAVE) {
 		pox_kprofiles_state = KPROFILES_BATTERY;
 		dyn_fsync_active = false;
