@@ -47,18 +47,7 @@
 	};
 
 	chosen {
-		/*
-		 * volt_offset_percent=3
-		 *   Overclock voltage headroom. fvmap.c:check_percent_margin() adds
-		 *   3% (rounded down to the 6250uV PMIC step) to EVERY ACPM DVFS
-		 *   operating point at boot. The stock voltages are stamped in
-		 *   bootloader SRAM and cannot be rebuilt in the kernel tree, so this
-		 *   is the supported way to make the top CPU/GPU/bus OPPs hold their
-		 *   frequency under sustained load instead of sagging, which is what
-		 *   previously showed up as stutter. All regulators here cap at
-		 *   1.30V and 3% keeps every OPP comfortably below that ceiling.
-		 */
-		bootargs = "console=ram root=/dev/ram0 clk_ignore_unused volt_offset_percent=3 androidboot.hardware=samsungexynos7885 androidboot.selinux=permissive ess_setup=0x86000000 androidboot.debug_level=0x4948";
+		bootargs = "console=ram root=/dev/ram0 clk_ignore_unused androidboot.hardware=samsungexynos7885 androidboot.selinux=permissive ess_setup=0x86000000 androidboot.debug_level=0x4948";
 		linux,initrd-start = <0x84000000>;
 		linux,initrd-end = <0x840FFFFF>;
 	};
@@ -1973,23 +1962,22 @@
 
 	cpufreq {
 		/*
-		 * domain@0 = CPU 0-5 (Cortex-A53 little cluster) -> ACPM_DVFS_CPUCL1
-		 *   real OPP ladder: 1599000 1352000 1001000 598000 385125
-		 * domain@1 = CPU 6-7 (Cortex-A73 big cluster)   -> ACPM_DVFS_CPUCL0
-		 *   real OPP ladder: 2192666 1698666 1300000 747500 476666
-		 *
-		 * Frequencies must exist in the ACPM DVFS ladder, otherwise the
-		 * request is silently coerced and the governor ends up oscillating
-		 * between unrelated OPPs (visible as lag / stutter).
+		 * Values verified against the device's live ECT ladder (SM-M205F,
+		 * /sys/devices/system/cpu/cpu*/cpufreq/scaling_available_frequencies):
+		 *   A53 (CPUCL1): 1586000 1482000 1352000 1248000 1144000 1014000
+		 *                 902000 839000 757000 676000 546000 449000
+		 *   A73 (CPUCL0): 2184000 2080000 1976000 1872000 1768000 1664000
+		 *                 1560000 1352000 1144000 936000
+		 * All frequencies below are real ECT operating points.
 		 */
 		domain@0 {
-			min-freq = <1001000>;
-			user-default-qos = <1599000>;
+			min-freq = <1144000>;
+			user-default-qos = <1586000>;
 		};
 		domain@1 {
-			min-freq = <1698666>;
-			max-freq = <2192666>;
-			user-default-qos = <2192666>;
+			min-freq = <1768000>;
+			max-freq = <2184000>;
+			user-default-qos = <2184000>;
 		};
 	};
 };

@@ -422,6 +422,60 @@ static int gpu_dvfs_update_asv_table(struct kbase_device *kbdev)
 			}
 		}
 	}
+
+	/*
+	 * Self-heal the table against the real silicon ladder.
+	 *
+	 * The DTS gpu_dvfs_table may contain rows the ECT/ACPM ladder does not
+	 * expose (historically 1200/1300 MHz copied from other SoCs). Those rows
+	 * stay zero-filled above while platform->table_size still counts them,
+	 * which makes gpu_dvfs_get_level() return -1 for the declared top OPPs
+	 * and leaves holes the governor indexes into. Compact the table to the
+	 * rows that actually matched a CAL level, then re-derive table_size and
+	 * the min/max clocks from the surviving rows so the level lattice is
+	 * contiguous: level 0 = fastest clock, level table_size-1 = slowest.
+	 *
+	 * governor_info[].table points at gpu_dvfs_table_default, so the
+	 * in-place compaction propagates to every governor; only the stored
+	 * sizes need refreshing afterwards.
+	 */
+	{
+		int n = 0;
+
+		for (j = 0; j < dvfs_table_row_num; j++) {
+			if (dvfs_table[j].clock) {
+				if (n != j)
+					dvfs_table[n] = dvfs_table[j];
+				n++;
+			}
+		}
+
+		if (n == 0) {
+			GPU_LOG(DVFS_ERROR, DUMMY, 0u, 0u,
+					"%s: no DTS gpu_dvfs_table row matched the ECT ladder\n",
+					__func__);
+			return -1;
+		}
+
+		for (j = n; j < DVFS_TABLE_ROW_MAX; j++)
+			memset(&dvfs_table[j], 0, sizeof(dvfs_table[j]));
+
+		/* Rows arrived in descending clock order; compacting preserves it. */
+		platform->gpu_max_clock = dvfs_table[0].clock;
+		platform->gpu_min_clock = dvfs_table[n - 1].clock;
+
+		/* Never advertise a max the CAL/ECT ladder cannot produce. */
+		if (platform->gpu_max_clock > platform->gpu_max_clock_limit)
+			platform->gpu_max_clock = platform->gpu_max_clock_limit;
+
+		for (i = 0; i < G3D_MAX_GOVERNOR_NUM; i++)
+			gpu_dvfs_update_table_size(i, n);
+
+		GPU_LOG(DVFS_WARNING, DUMMY, 0u, 0u,
+				"%s: DVFS table compacted to %d real levels, %d..%d KHz\n",
+				__func__, n, platform->gpu_min_clock, platform->gpu_max_clock);
+	}
+
 	return 0;
 }
 #endif

@@ -23,6 +23,43 @@ void __iomem *sram_fvmap_base;
 static int init_margin_table[MAX_MARGIN_ID] = {0};
 static int volt_offset_percent = 0;
 
+/*
+ * Built-in voltage margins (uV) applied at boot when the bootloader cmdline
+ * did not specify one. The stock DTB ships no volt_offset_percent / margin
+ * parameters, and AnyKernel3 for this device replaces only the kernel Image,
+ * so this is the path that actually reaches the hardware.
+ *
+ * A positive margin raises the voltage of every OPP in the domain, which
+ * lets the top operating points hold their frequency under sustained load
+ * instead of drooping (the classic cause of stutter after an overclock).
+ * All SoC rails here are capped at 1.30 V by the PMIC regulators in DT, and
+ * stock top-OPP voltages sit well below that, so +12.5 mV (two 6.25 mV PMIC
+ * steps) for the CPU clusters and the GPU, +6.25 mV for MIF, stays safely
+ * inside the regulator envelope.
+ */
+static const struct {
+	int id;
+	int uv;
+} pox_default_margins[] = {
+	{ MARGIN_BIG,	12500 },	/* A73 cluster	*/
+	{ MARGIN_LIT,	12500 },	/* A53 cluster	*/
+	{ MARGIN_G3D,	12500 },	/* GPU		*/
+	{ MARGIN_MIF,	 6250 },	/* DRAM/interconnect */
+};
+
+static void fvmap_seed_default_margins(void)
+{
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(pox_default_margins); i++) {
+		int id = pox_default_margins[i].id;
+
+		/* cmdline margins always win over the built-in defaults */
+		if (init_margin_table[id] == 0)
+			init_margin_table[id] = pox_default_margins[i].uv;
+	}
+}
+
 static int __init get_all_volt(char *str)
 {
 	int i, volt;
@@ -392,6 +429,10 @@ int fvmap_init(void __iomem *_sram_base)
 	fvmap_base = map_base;
 	sram_fvmap_base = sram_base;
 	pr_info("%s: fvmap initialized %pK\n", __func__, sram_base);
+
+	/* Apply built-in voltage margins before the tables are copied. */
+	fvmap_seed_default_margins();
+
 	fvmap_copy_from_sram(map_base, sram_base, NULL);
 
 	return 0;

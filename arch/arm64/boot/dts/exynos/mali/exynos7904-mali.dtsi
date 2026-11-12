@@ -10,35 +10,33 @@
 */
 
 &mali {
-	interactive_info = <1001000 40 0>;
 	/*
-	 * IMPORTANT: gpu_dvfs_update_asv_table() in
-	 * drivers/gpu/arm/b_r19p0/platform/exynos/mali_kbase_platform.c only
-	 * keeps rows whose clock exactly matches a real ACPM G3D DVFS level
-	 * (cal_dfs_get_rate_asv_table()). Any row that does not match is left
-	 * zero-filled in gpu_dvfs_table_default[], yet platform->table_size is
-	 * still taken from this "gpu_dvfs_table_size" row count. Declaring rows
-	 * that the silicon cannot produce therefore makes gpu_dvfs_get_level()
-	 * return -1 for the top OPPs, which breaks DVFS and causes the GPU to
-	 * fall back to the boot clock (perceived as lag / stutter).
+	 * The G3D DVFS ladder is defined by the ECT blob shipped in the device
+	 * DTB, not by this file. Verified on SM-M205F (m20lte) via
+	 * /sys/kernel/gpu/gpu_freq_table:
 	 *
-	 * The real Lassen (Exynos 7904) G3D ladder is listed below and
-	 * "gpu_dvfs_table_size" MUST equal the number of rows actually filled.
-	 * 1196 MHz is the true silicon maximum (PLL_1417X M=138/P=3/S=0). The
-	 * historically advertised 1300 MHz / 1200 MHz were never generatable on
-	 * this PLL, so they are not listed.
+	 *     343000 450000 545000 676000 845000 1001000 1100000
+	 *
+	 * gpu_dvfs_update_asv_table() keeps only rows whose clock exactly
+	 * matches one of those levels; everything else stays zero-filled while
+	 * platform->table_size still counts it, which breaks the governor and
+	 * makes the top OPPs unreachable. Rows below therefore list exactly the
+	 * seven levels the silicon exposes - no more, no less. 1100 MHz is the
+	 * true G3D maximum on this SoC; 1200/1300 MHz entries seen in other
+	 * SoC dtsi files do not exist in this ECT ladder.
 	 */
+	interactive_info = <1001000 40 0>; /* <highspeed_clk highspeed_load highspeed_delay> */
 	gpu_dvfs_table_size = <7 7>; /*<row col>*/
 	                /* clk     min max  down mif_min  lit_min big_max */
-	gpu_dvfs_table = < 1196000 98  100  1    1794000  1586000 0
+	gpu_dvfs_table = < 1100000 90  100  1    1794000  1586000 0
 	                   1001000 90   95  1    1794000  1586000 0
 	                    845000 85   95  1    1352000   757000 0
-	                    676000 80   95  1     676000   757000 0
-	                    545000 75   95  1     676000   757000 0
+	                    676000 85   95  1     676000   757000 0
+	                    545000 80   95  1     676000   757000 0
 	                    450000 70   95  1     546000   757000 0
 	                    343000 65   90  1     420000   449000 0 >;
-	gpu_max_clock = <1196000>;
-	gpu_max_clock_limit = <1196000>;
+	gpu_max_clock = <1100000>;
+	gpu_max_clock_limit = <1100000>;
 	gpu_min_clock = <343000>;
 	gpu_dvfs_start_clock = <1001000>;
 	gpu_dvfs_bl_config_clock = <1001000>;
@@ -46,5 +44,5 @@
 	gpu_dvfs_time_interval = <2>;
 	gpu_dvfs_polling_time = <10>;
 	gpu_temp_throttling_level_num = <6>;
-	gpu_temp_throttling = <1196000 1196000 1001000 845000 676000 545000>;
+	gpu_temp_throttling = <1100000 1001000 845000 676000 545000 450000>;
 };
