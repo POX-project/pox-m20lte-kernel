@@ -1962,8 +1962,8 @@
 
 	cpufreq {
 		/*
-		 * Values verified against the device's live ECT ladder (SM-M205F,
-		 * /sys/devices/system/cpu/cpu*/cpufreq/scaling_available_frequencies):
+		 * Values verified against the device's live ECT ladder (SM-M205F via
+		 * scaling_available_frequencies in cpufreq sysfs):
 		 *   A53 (CPUCL1): 1586000 1482000 1352000 1248000 1144000 1014000
 		 *                 902000 839000 757000 676000 546000 449000
 		 *   A73 (CPUCL0): 2184000 2080000 1976000 1872000 1768000 1664000
