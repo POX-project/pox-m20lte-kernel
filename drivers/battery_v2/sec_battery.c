@@ -439,8 +439,12 @@ static int sec_bat_get_wireless_current(struct sec_battery_info *battery, int in
 static void sec_bat_get_charging_current_by_siop(struct sec_battery_info *battery,
 		int *input_current, int *charging_current)
 {
-	/* User request: max performance at all times, no downs even in charging */
-	return;
+#if IS_ENABLED(CONFIG_POX_KERNEL)
+	if (pox_fast_charge_get()) {
+		/* Fast charging at all times: bypass SIOP / screen-on degradation */
+		return;
+	}
+#endif
 	if (battery->pdata->siop_default_power > 0) {
 		if ((battery->max_charge_power > battery->pdata->siop_default_power) &&
 			(battery->siop_level < 100)) {
@@ -576,8 +580,44 @@ static int sec_bat_get_temp_by_temp_control_source(struct sec_battery_info *batt
 
 static void sec_bat_check_mix_temp(struct sec_battery_info *battery, int *input_current, int *charging_current)
 {
-	battery->mix_limit = false;
-	return;
+	if (battery->pdata->chg_temp_check && battery->siop_level >= 100 && is_not_wireless_type(battery->cable_type)) {
+		if ((!battery->mix_limit &&
+				(battery->temperature > battery->pdata->mix_high_temp) &&
+				(battery->chg_temp > battery->pdata->mix_high_chg_temp)) ||
+			(battery->mix_limit &&
+				(battery->temperature >= battery->pdata->mix_high_temp_recovery) &&
+				(battery->pdata->mix_high_temp_recovery > 0)) ||
+			(battery->mix_limit &&
+				(battery->chg_temp >= battery->pdata->mix_high_chg_temp_recovery) &&
+				(battery->pdata->mix_high_chg_temp_recovery > 0))) {
+			int max_input_current =
+				battery->pdata->full_check_current_1st + 50;
+				
+			/* input current = float voltage * (topoff_current_1st + 50mA(margin)) / (vbus_level * 0.9) */
+			if (battery->pdata->mix_temp_input_current > 0)
+				*input_current = battery->pdata->mix_temp_input_current;
+			else 
+				*input_current = ((battery->pdata->chg_float_voltage / battery->pdata->chg_float_voltage_conv) * max_input_current) /
+					(battery->input_voltage * 90) / 10;
+				
+			/*set_charging current*/
+			if (battery->pdata->mix_temp_charging_current > 0)
+				*charging_current = (*charging_current > battery->pdata->mix_temp_charging_current) ? 
+							battery->pdata->mix_temp_charging_current : *charging_current;
+
+			battery->mix_limit = true;
+			/* skip other heating control */
+			sec_bat_set_current_event(battery, SEC_BAT_CURRENT_EVENT_SKIP_HEATING_CONTROL,
+						SEC_BAT_CURRENT_EVENT_SKIP_HEATING_CONTROL);
+		} else if (battery->mix_limit) {
+			battery->mix_limit = false;
+		}
+
+		pr_info("%s: mix_limit(%d), temp(%d), chg_temp(%d), input_current(%d), charging_current(%d)\n",
+			__func__, battery->mix_limit, battery->temperature, battery->chg_temp, *input_current, *charging_current);
+	} else {
+		battery->mix_limit = false;
+	}
 }
 
 static int sec_bat_check_wpc_temp(struct sec_battery_info *battery, int input_current)
@@ -648,8 +688,12 @@ extern int muic_afc_set_voltage(int vol);
 #endif
 static void sec_bat_check_afc_temp(struct sec_battery_info *battery, int *input_current, int *charging_current)
 {
-	/* User request: max performance at all times, no downs even in charging */
-	return;
+#if IS_ENABLED(CONFIG_POX_KERNEL)
+	if (pox_fast_charge_get()) {
+		/* Enforce 9V AFC without dropping to 5V */
+		return;
+	}
+#endif
 #if defined(CONFIG_HV_MUIC_VOLTAGE_CTRL) || defined(CONFIG_SUPPORT_QC30)
 	if (battery->siop_level >= 100) {
 		if (battery->current_event & SEC_BAT_CURRENT_EVENT_CHG_LIMIT) {
@@ -735,9 +779,38 @@ static void sec_bat_check_afc_temp(struct sec_battery_info *battery, int *input_
 static void sec_bat_chg_temperature_check(struct sec_battery_info *battery,
 				int *input_current, int *charging_current)
 {
-	/* User request: make no battery temp watchout in charging */
-	battery->chg_limit = false;
-	return;
+#if IS_ENABLED(CONFIG_POX_KERNEL)
+	if (pox_fast_charge_get()) {
+		/* Allow full fast charging rate without premature thermal clipping */
+		return;
+	}
+#endif
+	if ((battery->siop_level >= 100) &&
+			is_hv_wire_type(battery->cable_type)) {
+		if (!battery->chg_limit &&
+				(battery->chg_temp > battery->pdata->chg_high_temp)) {
+			battery->chg_limit = true;
+			*input_current = battery->pdata->chg_input_limit_current;
+			*charging_current = battery->pdata->chg_charging_limit_current;
+			dev_info(battery->dev,"%s: Chg current is reduced by Temp: %d\n",
+					__func__, battery->chg_temp);
+		} else if (battery->chg_limit &&
+				(battery->chg_temp < battery->pdata->chg_high_temp_recovery)) {
+			battery->chg_limit = false;
+			*input_current = battery->pdata->charging_current
+				[battery->cable_type].input_current_limit;
+			*charging_current = battery->pdata->charging_current
+					[battery->cable_type].fast_charging_current;
+			dev_info(battery->dev,"%s: Chg current is recovered by Temp: %d\n",
+					__func__, battery->chg_temp);
+		} else if (battery->chg_limit &&
+				(battery->chg_temp > battery->pdata->chg_high_temp)) {
+			*input_current = battery->pdata->chg_input_limit_current;
+			*charging_current = battery->pdata->chg_charging_limit_current;
+		}
+	}
+	pr_info("%s: cable_type(%d), chg_limit(%d)\n", __func__,
+			battery->cable_type, battery->chg_limit);
 }
 
 #if defined(CONFIG_CCIC_NOTIFIER)
@@ -795,8 +868,21 @@ static bool sec_bat_change_vbus_pd(struct sec_battery_info *battery, int *input_
 
 static void sec_bat_check_pdic_temp(struct sec_battery_info *battery, int *input_current, int *charging_current)
 {
-	/* User request: max performance at all times, no downs even in charging */
-	return;
+	if (battery->pdic_ps_rdy && battery->siop_level >= 100 && !battery->lcd_status) {
+		if ((!battery->chg_limit && (battery->chg_temp >= battery->pdata->chg_high_temp)) ||
+			(battery->chg_limit && (battery->chg_temp >= battery->pdata->chg_high_temp_recovery))) {
+			*input_current =
+				(battery->pdata->chg_input_limit_current * SEC_INPUT_VOLTAGE_9V) / battery->input_voltage;
+			*charging_current = battery->pdata->chg_charging_limit_current;
+			battery->chg_limit = true;
+		} else if (battery->chg_limit && battery->chg_temp <= battery->pdata->chg_high_temp_recovery) {
+			*input_current = battery->pdata->charging_current[battery->cable_type].input_current_limit;
+			*charging_current = battery->pdata->charging_current[battery->cable_type].fast_charging_current;
+			battery->chg_limit = false;
+		}
+		pr_info("%s: cable_type(%d), chg_limit(%d)\n", __func__,
+			battery->cable_type, battery->chg_limit);
+	}
 }
 
 static int sec_bat_check_pd_input_current(struct sec_battery_info *battery, int input_current)
@@ -1763,11 +1849,17 @@ static void sec_bat_swelling_check(struct sec_battery_info *battery)
 		battery->charging_block, (battery->current_event & SEC_BAT_CURRENT_EVENT_LOW_TEMP_MODE),
 		val.intval, battery->temperature);
 
-	/* swelling_mode: completely bypassed per user request (no temp watchout) */
-	battery->skip_swelling = true;
-	battery->swelling_mode = SWELLING_MODE_NONE;
-	sec_bat_set_current_event(battery, 0, SEC_BAT_CURRENT_EVENT_SWELLING_MODE);
-	goto skip_swelling_check;
+	/* swelling_mode
+		under voltage over voltage, battery missing */
+	if ((battery->status == POWER_SUPPLY_STATUS_DISCHARGING) ||\
+		(battery->status == POWER_SUPPLY_STATUS_NOT_CHARGING) ||
+		battery->skip_swelling || !battery->pdata->temp_check_type) {
+		pr_debug("%s: DISCHARGING or NOT-CHARGING or 15 test mode or NOT-check TEMP. Stop swelling mode\n",
+			__func__);
+		battery->swelling_mode = SWELLING_MODE_NONE;
+		sec_bat_set_current_event(battery, 0, SEC_BAT_CURRENT_EVENT_SWELLING_MODE);
+		goto skip_swelling_check;
+	}
 
 	if (!battery->swelling_mode) {
 		if ((battery->temperature >= battery->pdata->swelling_high_temp_block) &&
@@ -2089,20 +2181,6 @@ static bool sec_bat_temperature(
 }
 
 static bool sec_bat_temperature_check(
-				struct sec_battery_info *battery)
-{
-	/* User request: make no battery temp watchout in charging */
-	battery->health = POWER_SUPPLY_HEALTH_GOOD;
-	battery->temp_highlimit_cnt = 0;
-	battery->temp_high_cnt = 0;
-	battery->temp_low_cnt = 0;
-	battery->temp_recover_cnt = 0;
-	battery->health_change = false;
-	battery->is_abnormal_temp = false;
-	return true;
-}
-
-static bool sec_bat_temperature_check_disabled(
 				struct sec_battery_info *battery)
 {
 	int temp_value = 0;

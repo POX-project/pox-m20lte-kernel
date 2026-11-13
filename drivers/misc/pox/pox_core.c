@@ -39,9 +39,11 @@
 
 #include "pox_core.h"
 
-/* Dynamic Fsync state */
-bool dyn_fsync_active = true;
-EXPORT_SYMBOL(dyn_fsync_active);
+/* Dynamic Fsync state: the fsync bypass was removed because skipping
+ * vfs_fsync_range() breaks write durability for SQLite/WAL and every other
+ * application. The sysfs knob is kept as a no-op for ABI compatibility and
+ * always reports 0.
+ */
 
 /* RT8547 Flash LED Driver symbols (leds-rt8547.c) */
 extern void rt8547_setGpio(int onoff);
@@ -287,7 +289,6 @@ static int pox_fb_notifier_callback(struct notifier_block *this,
 	switch (blank) {
 	case FB_BLANK_POWERDOWN:
 		/* Ceiling performance active at all times */
-		dyn_fsync_active = true;
 		if (kp_auto_mode) {
 			mutex_lock(&pox_lock);
 			active_profile_before_screen_off = pox_kprofiles_state;
@@ -297,7 +298,6 @@ static int pox_fb_notifier_callback(struct notifier_block *this,
 		}
 		break;
 	case FB_BLANK_UNBLANK:
-		dyn_fsync_active = true;
 		mutex_lock(&pox_lock);
 		pox_kprofiles_state = KPROFILES_PERFORMANCE;
 		pox_gaming_mode_state = GAMING_MODE_EXTREME;
@@ -322,17 +322,14 @@ int pox_gaming_mode_set(int mode)
 
 	if (mode > 0) {
 		pox_kprofiles_state = KPROFILES_PERFORMANCE;
-		dyn_fsync_active = true;
 		pox_touch_game_mode_val = 1;
 		pox_touch_sensitivity_val = 1;
 	} else if (mode == GAMING_MODE_POWERSAVE) {
 		pox_kprofiles_state = KPROFILES_BATTERY;
-		dyn_fsync_active = false;
 		pox_touch_game_mode_val = 0;
 		pox_touch_sensitivity_val = 0;
 	} else {
 		pox_kprofiles_state = KPROFILES_BALANCED;
-		dyn_fsync_active = false;
 		pox_touch_game_mode_val = 0;
 		pox_touch_sensitivity_val = 1;
 	}
@@ -651,14 +648,14 @@ EXPORT_SYMBOL(pox_dt2w_get);
 
 int pox_dynamic_fsync_set(int enable)
 {
-	dyn_fsync_active = enable ? true : false;
+	/* Deprecated: fsync is never bypassed; keep the sysfs ABI quiet. */
 	return 0;
 }
 EXPORT_SYMBOL(pox_dynamic_fsync_set);
 
 int pox_dynamic_fsync_get(void)
 {
-	return dyn_fsync_active ? 1 : 0;
+	return 0;
 }
 EXPORT_SYMBOL(pox_dynamic_fsync_get);
 
