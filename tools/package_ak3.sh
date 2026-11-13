@@ -66,6 +66,28 @@ else
     cp "$DIST_DIR/Image-m20lte" "$AK_DIR/zImage"
 fi
 
+# Bundle compiled DTB or DTBO if available
+for dtb_candidate in "$ROOT_DIR/arch/arm64/boot/dts/exynos/dtbo/exynos7885.dtb" \
+                     "$ROOT_DIR/arch/arm64/boot/dts/exynos/exynos7885.dtb" \
+                     "$ROOT_DIR/arch/arm64/boot/dtb" \
+                     "$ROOT_DIR/arch/arm64/boot/dtb.img"; do
+    if [ -f "$dtb_candidate" ]; then
+        echo "Found compiled DTB: $dtb_candidate -> bundling into AnyKernel3"
+        cp -f "$dtb_candidate" "$AK_DIR/dtb"
+        cp -f "$dtb_candidate" "$DIST_DIR/dtb"
+        break
+    fi
+done
+
+for dtbo_candidate in $(find "$ROOT_DIR/arch/arm64/boot/dts/exynos" -name "*7904*.dtbo" -o -name "*7885*.dtbo" 2>/dev/null); do
+    if [ -f "$dtbo_candidate" ]; then
+        echo "Found compiled DTBO: $dtbo_candidate -> bundling into AnyKernel3"
+        cp -f "$dtbo_candidate" "$AK_DIR/dtbo.img"
+        cp -f "$dtbo_candidate" "$DIST_DIR/dtbo.img"
+        break
+    fi
+done
+
 cat > "$AK_DIR/anykernel.sh" << EOS
 # AnyKernel3 Ramdisk Mod Script
 # Pox Kernel 2.1-${EDITION} for Samsung Galaxy M20 (m20lte) by txorav

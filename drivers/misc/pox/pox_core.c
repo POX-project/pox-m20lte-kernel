@@ -70,7 +70,7 @@ EXPORT_SYMBOL(sysctl_sched_burst_cache_lifetime);
 static DEFINE_MUTEX(pox_lock);
 static int pox_gaming_mode_state = GAMING_MODE_EXTREME;
 static int pox_kprofiles_state = KPROFILES_PERFORMANCE;
-static int kp_auto_mode = 1;
+static int kp_auto_mode = 0;
 static int active_profile_before_screen_off = KPROFILES_PERFORMANCE;
 
 static int pox_health_cal_mode = HEALTH_CAL_DISABLED;
@@ -286,7 +286,8 @@ static int pox_fb_notifier_callback(struct notifier_block *this,
 
 	switch (blank) {
 	case FB_BLANK_POWERDOWN:
-		dyn_fsync_active = false;
+		/* Ceiling performance active at all times */
+		dyn_fsync_active = true;
 		if (kp_auto_mode) {
 			mutex_lock(&pox_lock);
 			active_profile_before_screen_off = pox_kprofiles_state;
@@ -297,13 +298,11 @@ static int pox_fb_notifier_callback(struct notifier_block *this,
 		break;
 	case FB_BLANK_UNBLANK:
 		dyn_fsync_active = true;
-		if (kp_auto_mode) {
-			mutex_lock(&pox_lock);
-			pox_kprofiles_state = KPROFILES_PERFORMANCE;
-			pox_gaming_mode_state = GAMING_MODE_EXTREME;
-			pox_memory_preset(GAMING_MODE_EXTREME);
-			mutex_unlock(&pox_lock);
-		}
+		mutex_lock(&pox_lock);
+		pox_kprofiles_state = KPROFILES_PERFORMANCE;
+		pox_gaming_mode_state = GAMING_MODE_EXTREME;
+		pox_memory_preset(GAMING_MODE_EXTREME);
+		mutex_unlock(&pox_lock);
 		break;
 	default:
 		break;

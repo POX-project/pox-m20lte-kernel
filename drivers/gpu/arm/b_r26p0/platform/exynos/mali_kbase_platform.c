@@ -462,11 +462,15 @@ static int gpu_dvfs_update_asv_table(struct kbase_device *kbdev)
 
 		/* Rows arrived in descending clock order; compacting preserves it. */
 		platform->gpu_max_clock = dvfs_table[0].clock;
-		platform->gpu_min_clock = dvfs_table[n - 1].clock;
 
 		/* Never advertise a max the CAL/ECT ladder cannot produce. */
 		if (platform->gpu_max_clock > platform->gpu_max_clock_limit)
 			platform->gpu_max_clock = platform->gpu_max_clock_limit;
+
+		/* User request: ceiling is default and works all the time */
+		platform->gpu_min_clock = platform->gpu_max_clock;
+		platform->min_lock = platform->gpu_max_clock;
+		platform->step = 0;
 
 		for (i = 0; i < G3D_MAX_GOVERNOR_NUM; i++)
 			gpu_dvfs_update_table_size(i, n);

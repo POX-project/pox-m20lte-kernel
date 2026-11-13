@@ -2174,18 +2174,21 @@ static int exynos_devfreq_probe(struct platform_device *pdev)
 		goto err_devfreq;
 	}
 
-	data->devfreq->min_freq = data->min_freq;
+	/* User request: ceiling is default and works all the time */
+	data->min_freq = data->max_freq;
+	data->default_qos = data->max_freq;
+	data->devfreq->min_freq = data->max_freq;
 	data->devfreq->max_freq = data->max_freq;
 
-	pm_qos_add_request(&data->sys_pm_qos_min, (int)data->pm_qos_class, data->min_freq);
+	pm_qos_add_request(&data->sys_pm_qos_min, (int)data->pm_qos_class, data->max_freq);
 #ifdef CONFIG_ARM_EXYNOS_DEVFREQ_DEBUG
-	pm_qos_add_request(&data->debug_pm_qos_min, (int)data->pm_qos_class, data->min_freq);
+	pm_qos_add_request(&data->debug_pm_qos_min, (int)data->pm_qos_class, data->max_freq);
 	pm_qos_add_request(&data->debug_pm_qos_max, (int)data->pm_qos_class_max, data->max_freq);
 #endif
 	if (data->pm_qos_class_max)
 		pm_qos_add_request(&data->default_pm_qos_max, (int)data->pm_qos_class_max,
 				   data->max_freq);
-	pm_qos_add_request(&data->default_pm_qos_min, (int)data->pm_qos_class, data->default_qos);
+	pm_qos_add_request(&data->default_pm_qos_min, (int)data->pm_qos_class, data->max_freq);
 	pm_qos_add_request(&data->boot_pm_qos, (int)data->pm_qos_class,
 			   data->devfreq_profile.initial_freq);
 
