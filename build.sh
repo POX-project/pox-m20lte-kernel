@@ -36,12 +36,12 @@ case "$ACTION" in
         echo "==> Clean complete."
         exit 0
         ;;
-    apatch)
-        echo "==> Applying APatch patch..."
+    apatch|folkpatch)
+        echo "==> Applying FolkPatch (KernelPatch) patch..."
         patch -p1 -N < "$ROOT_DIR/patches/apatch.patch" || true
         DEFCONFIG="m20lte_defconfig"
-        EDITION="Onyx-APatch"
-        ZIP_NAME="Pox-Kernel-2.1-Onyx-APatch-m20lte.zip"
+        EDITION="Onyx-FolkPatch"
+        ZIP_NAME="Pox-Kernel-2.1-Onyx-FolkPatch-m20lte.zip"
         ;;
     ksu-next|ksu)
         echo "==> Applying KernelSU-Next patch..."

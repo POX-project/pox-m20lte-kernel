@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [vanilla, apatch]
+        variant: [vanilla, folkpatch]
 
     steps:
       - name: Checkout
@@ -48,12 +48,12 @@ jobs:
         run: |
           set -e
           case "${{ matrix.variant }}" in
-            apatch)
-              echo "Applying APatch patch..."
+            apatch|folkpatch)
+              echo "Applying FolkPatch patch..."
               patch -p1 < patches/apatch.patch
               echo "DEFCONFIG=m20lte_defconfig" >> $GITHUB_ENV
-              echo "EDITION=Onyx-APatch" >> $GITHUB_ENV
-              echo "ZIP_NAME=Pox-Kernel-2.1-Onyx-APatch-m20lte.zip" >> $GITHUB_ENV
+              echo "EDITION=Onyx-FolkPatch" >> $GITHUB_ENV
+              echo "ZIP_NAME=Pox-Kernel-2.1-Onyx-FolkPatch-m20lte.zip" >> $GITHUB_ENV
               ;;
             vanilla|*)
               echo "Clean Onyx (Vanilla) build..."
