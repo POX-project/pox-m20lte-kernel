@@ -1000,7 +1000,7 @@ static int s2mu004_get_current(struct s2mu004_fuelgauge_data *fuelgauge)
 		curr = (curr * (-1000)) >> 12;
 	}
 
-	dev_info(&fuelgauge->i2c->dev, "%s: current (%d)mA\n", __func__, curr);
+	dev_dbg(&fuelgauge->i2c->dev, "%s: current (%d)mA\n", __func__, curr);
 
 	return curr;
 }
@@ -1027,7 +1027,7 @@ static int s2mu004_get_ocv(struct s2mu004_fuelgauge_data *fuelgauge)
 	ocv_arr = fuelgauge->info.ocv_arr_val;
 #endif
 
-	dev_err(&fuelgauge->i2c->dev,
+	dev_dbg(&fuelgauge->i2c->dev,
 		"%s: soc (%d) soc_arr[TABLE_SIZE-1] (%d) ocv_arr[TABLE_SIZE-1) (%d)\n",
 		__func__, soc, soc_arr[TABLE_SIZE-1], ocv_arr[TABLE_SIZE-1]);
 	if (soc <= soc_arr[TABLE_SIZE - 1]) {
@@ -1054,7 +1054,7 @@ static int s2mu004_get_ocv(struct s2mu004_fuelgauge_data *fuelgauge)
 					(soc_arr[low_index] - soc_arr[high_index]);
 
 ocv_soc_mapping:
-	dev_info(&fuelgauge->i2c->dev, "%s: soc (%d), ocv (%d)\n", __func__, soc, ocv);
+	dev_dbg(&fuelgauge->i2c->dev, "%s: soc (%d), ocv (%d)\n", __func__, soc, ocv);
 	return ocv;
 }
 
@@ -1083,10 +1083,10 @@ static int s2mu004_get_avgcurrent(struct s2mu004_fuelgauge_data *fuelgauge)
 
 	mutex_unlock(&fuelgauge->fg_lock);
 
-	dev_info(&fuelgauge->i2c->dev, "%s: MONOUT(0x%4x), avg current (%d)mA\n",
+	dev_dbg(&fuelgauge->i2c->dev, "%s: MONOUT(0x%4x), avg current (%d)mA\n",
 		__func__, compliment, curr);
 
-	dev_info(&fuelgauge->i2c->dev, "%s: SOC(%d)%%\n", __func__, fuelgauge->info.soc);
+	dev_dbg(&fuelgauge->i2c->dev, "%s: SOC(%d)%%\n", __func__, fuelgauge->info.soc);
 
 	return curr;
 
@@ -1129,7 +1129,7 @@ static int s2mu004_get_vbat(struct s2mu004_fuelgauge_data *fuelgauge)
 	vbat = ((data[0] + (data[1] << 8)) * 1000) >> 13;
 
 	s2mu004_read_reg_byte(fuelgauge->i2c, S2MU004_REG_CTRL0, &vbat_src);
-	dev_info(&fuelgauge->i2c->dev, "%s: vbat (%d), src (0x%02X)\n",
+	dev_dbg(&fuelgauge->i2c->dev, "%s: vbat (%d), src (0x%02X)\n",
 		__func__, vbat, (vbat_src & 0x30) >> 4);
 
 	return vbat;
@@ -1156,7 +1156,7 @@ static int s2mu004_get_monout_avgvbat(struct s2mu004_fuelgauge_data *fuelgauge)
 
 	mutex_unlock(&fuelgauge->fg_lock);
 
-	dev_info(&fuelgauge->i2c->dev, "%s: avgvbat (%d)\n", __func__, avg_vbat);
+	dev_dbg(&fuelgauge->i2c->dev, "%s: avgvbat (%d)\n", __func__, avg_vbat);
 
 	return avg_vbat;
 
@@ -1183,7 +1183,7 @@ static int s2mu004_get_avgvbat(struct s2mu004_fuelgauge_data *fuelgauge)
 			old_vbat = new_vbat / 2 + old_vbat / 2;
 	}
 
-	dev_info(&fuelgauge->i2c->dev, "%s: avgvbat (%d)\n", __func__, old_vbat);
+	dev_dbg(&fuelgauge->i2c->dev, "%s: avgvbat (%d)\n", __func__, old_vbat);
 
 	if ((fuelgauge->vbatl_mode == VBATL_MODE_SW_VALERT) &&
 		(fuelgauge->temperature > (int)fuelgauge->low_temp_limit) &&

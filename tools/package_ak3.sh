@@ -484,7 +484,82 @@ EOF
     cp -f /data/adb/service.d/install_pox_manager.sh /data/adb/ksu/service.d/install_pox_manager.sh 2>/dev/null || true;
     chmod 0755 /data/adb/ap/service.d/install_pox_manager.sh /data/adb/ksu/service.d/install_pox_manager.sh 2>/dev/null || true;
 
-    ui_print " [*] Pox Kernel Manager auto-install & root grants configured.";
+    # 4. Overclock & Zero-Lag Performance Tuning Service (All Variants)
+    cat << 'EOF' > /data/adb/service.d/99-pox-overclock-maxperf.sh
+#!/system/bin/sh
+# Pox Kernel Onyx Overclock & Zero-Lag Tuning Service
+(
+while [ "$(getprop sys.boot_completed)" != "1" ]; do
+    sleep 2
+done
+sleep 2
+
+# 1. CPU Interactive Governor Max Clocks & Instant Ramp
+for p in /sys/devices/system/cpu/cpu0/cpufreq/interactive /sys/devices/system/cpu/cpu6/cpufreq/interactive /sys/devices/system/cpu/cpufreq/interactive; do
+    if [ -d "$p" ]; then
+        echo 1 > "$p/boost" 2>/dev/null || true
+        echo 1 > "$p/io_is_busy" 2>/dev/null || true
+        echo 15 > "$p/go_hispeed_load" 2>/dev/null || true
+        echo 25 > "$p/target_loads" 2>/dev/null || true
+        echo 19000 > "$p/timer_rate" 2>/dev/null || true
+        echo 19000 > "$p/timer_slack" 2>/dev/null || true
+        echo 20000 > "$p/min_sample_time" 2>/dev/null || true
+    fi
+done
+[ -f /sys/devices/system/cpu/cpu0/cpufreq/interactive/hispeed_freq ] && echo 1586000 > /sys/devices/system/cpu/cpu0/cpufreq/interactive/hispeed_freq 2>/dev/null || true
+[ -f /sys/devices/system/cpu/cpu6/cpufreq/interactive/hispeed_freq ] && echo 2184000 > /sys/devices/system/cpu/cpu6/cpufreq/interactive/hispeed_freq 2>/dev/null || true
+
+# 2. HMP Zero-Lag Fast Big Core Scheduling
+if [ -d /sys/kernel/hmp ]; then
+    echo 1 > /sys/kernel/hmp/aggressive_up_migration 2>/dev/null || true
+    echo 0 > /sys/kernel/hmp/packing_enable 2>/dev/null || true
+    echo 250 > /sys/kernel/hmp/up_threshold 2>/dev/null || true
+    echo 120 > /sys/kernel/hmp/down_threshold 2>/dev/null || true
+fi
+
+# 3. Mali-G71 GPU 1100 MHz Overclock Lock
+MALI=/sys/devices/platform/11500000.mali
+if [ -d "$MALI" ]; then
+    echo 1100000 > "$MALI/dvfs_min_lock" 2>/dev/null || true
+    echo 1100000 > "$MALI/highspeed_clock" 2>/dev/null || true
+    echo 10 > "$MALI/highspeed_load" 2>/dev/null || true
+    echo always_on > "$MALI/power_policy" 2>/dev/null || true
+fi
+
+# 4. Devfreq Memory Bus (MIF) & Interconnect (INT) Ceiling
+for dm in /sys/devices/platform/17000000.exynos-dm/exynos_dm; do
+    if [ -d "$dm" ]; then
+        [ -f "$dm/dm_mif/min_freq" ] && echo 1794000 > "$dm/dm_mif/min_freq" 2>/dev/null || true
+        [ -f "$dm/dm_int/min_freq" ] && echo 533000 > "$dm/dm_int/min_freq" 2>/dev/null || true
+    fi
+done
+
+# 5. eMMC Flash Storage Zero-Latency Queue
+for blk in /sys/block/mmcblk0/queue; do
+    if [ -d "$blk" ]; then
+        echo noop > "$blk/scheduler" 2>/dev/null || true
+        echo 512 > "$blk/read_ahead_kb" 2>/dev/null || true
+        echo 0 > "$blk/iostats" 2>/dev/null || true
+        echo 0 > "$blk/add_random" 2>/dev/null || true
+    fi
+done
+
+# 6. Pox Core Engine Engagement
+[ -f /proc/perfmgr/gaming_mode ] && echo 2 > /proc/perfmgr/gaming_mode 2>/dev/null || true
+[ -f /sys/kernel/gaming_mode ] && echo 2 > /sys/kernel/gaming_mode 2>/dev/null || true
+[ -f /sys/kernel/kprofiles/kp_mode ] && echo 3 > /sys/kernel/kprofiles/kp_mode 2>/dev/null || true
+[ -f /sys/kernel/sched_bore/sched_bore ] && echo 1 > /sys/kernel/sched_bore/sched_bore 2>/dev/null || true
+[ -f /proc/sys/vm/page-cluster ] && echo 0 > /proc/sys/vm/page-cluster 2>/dev/null || true
+[ -f /proc/sys/vm/swappiness ] && echo 100 > /proc/sys/vm/swappiness 2>/dev/null || true
+[ -f /proc/sys/vm/vfs_cache_pressure ] && echo 100 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null || true
+) &
+EOF
+    chmod 0755 /data/adb/service.d/99-pox-overclock-maxperf.sh 2>/dev/null || true;
+    cp -f /data/adb/service.d/99-pox-overclock-maxperf.sh /data/adb/ap/service.d/99-pox-overclock-maxperf.sh 2>/dev/null || true;
+    cp -f /data/adb/service.d/99-pox-overclock-maxperf.sh /data/adb/ksu/service.d/99-pox-overclock-maxperf.sh 2>/dev/null || true;
+    chmod 0755 /data/adb/ap/service.d/99-pox-overclock-maxperf.sh /data/adb/ksu/service.d/99-pox-overclock-maxperf.sh 2>/dev/null || true;
+
+    ui_print " [*] Pox Kernel Manager auto-install & overclock tuning configured.";
 fi;
 EOS
 

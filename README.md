@@ -2,7 +2,7 @@
 
 [![GitHub Repo](https://img.shields.io/badge/GitHub-POX--project%2Fpox--m20lte--kernel-181717.svg?logo=github)](https://github.com/POX-project/pox-m20lte-kernel)
 [![Kernel Version](https://img.shields.io/badge/Kernel-Linux%204.4.177-green.svg?logo=linux)](https://github.com/POX-project/pox-m20lte-kernel)
-[![Pox Release](https://img.shields.io/badge/Pox%20Release-v2.1.0-blue.svg)](https://github.com/POX-project/pox-m20lte-kernel)
+[![Pox Release](https://img.shields.io/badge/Pox%20Release-v2.1.1-blue.svg)](https://github.com/POX-project/pox-m20lte-kernel)
 [![Device](https://img.shields.io/badge/Device-Samsung%20Galaxy%20M20%20(m20lte)-orange.svg?logo=samsung)](https://github.com/POX-project/pox-m20lte-kernel)
 [![SoC](https://img.shields.io/badge/SoC-Samsung%20Exynos%207904%20(universal7885)-red.svg)](https://github.com/POX-project/pox-m20lte-kernel)
 [![Solidarity](https://img.shields.io/badge/Stand%20With-Free%20Palestine%20🇵🇸-red?style=flat&colorA=000000&colorB=007A3D)](https://en.wikipedia.org/wiki/State_of_Palestine)
@@ -26,9 +26,11 @@
 ## Table of Contents
 
 - [Overview & Hardware Specifications](#overview--hardware-specifications)
-- [Release Evolution: 1.0 Legacy to 2.0 Mainline](#release-evolution-10-legacy-to-20-mainline)
+- [Release Evolution: 1.0 Legacy to 2.1 Mainline](#release-evolution-10-legacy-to-21-mainline)
   - [Version 1.0 (Beta / Prototype - Deprecated)](#1-version-10-beta--prototype---deprecated)
-  - [Version 2.0.0 (Mainline / Active Supported)](#2-version-200-mainline--active-supported)
+  - [Version 2.0.0 (Mainline / Historical)](#2-version-200-mainline--historical)
+  - [Version 2.1.0 (Zero-Lag Engine & RAM Management)](#3-version-210-zero-lag-engine-max-charging-speed--modern-ram-management)
+  - [Version 2.1.1 (Dynamic Overclock, Sultan Debloat & HMP Migration)](#4-version-211-dynamic-overclock-restoration-devfreq-d-state-fix-sultan-debloat--hmp-zero-lag-migration)
 - [Editions & The Variant Matrix](#editions--the-variant-matrix)
 - [Comprehensive Kernel Addons & Features](#comprehensive-kernel-addons--features)
   - [1. Touchscreen Anti-Ghosting & Noise Filtration Engine](#1-touchscreen-anti-ghosting--noise-filtration-engine)
@@ -98,7 +100,7 @@ The 2.0.0 release upgrades Pox Kernel for the Galaxy M20 into a production-grade
 ---
 
 ### 3. Version 2.1.0 (Zero-Lag Engine, Max Charging Speed & Modern RAM Management)
-> **STATUS: LATEST ACTIVE MAINLINE RELEASE.**
+> **STATUS: HISTORICAL MAINLINE RELEASE.**
 
 The 2.1.0 release targets absolute performance and lag eradication under Android 15 on 3GB RAM:
 * **Max Charging Speed At All Times**:
@@ -115,6 +117,27 @@ The 2.1.0 release targets absolute performance and lag eradication under Android
   * Configured `page_cluster = 0` and optimized dirty writeback ratios (`vm_dirty_ratio = 10`, `dirty_background_ratio = 5`).
 * **CI Runner Overhaul**:
   * Upgraded GitHub Actions workflow to standard `ubuntu-22.04` cloud runners, ensuring instant builds and release artifact generation without waiting for offline self-hosted runners.
+
+---
+
+### 4. Version 2.1.1 (Dynamic Overclock Restoration, Devfreq D-State Fix, Sultan Debloat & HMP Zero-Lag Migration)
+> **STATUS: LATEST ACTIVE MAINLINE RELEASE.**
+
+The 2.1.1 release addresses deep Exynos 7904 scheduling, governor, and background lock contention issues:
+* **Dynamic Overclock Restoration**:
+  * Fixed cpufreq scaling bug where `policy->min = policy->max` froze transitions to 0. Restored real-time dynamic scaling across 1.586 GHz little and 2.184 GHz big clusters (`get_freq`, verified frequency tables, and proper QoS limits).
+* **Devfreq Phantom Loadavg & D-State Elimination**:
+  * Replaced `kthread_create` with `kthread_run` for 6 devfreq threads, eliminating permanent `TASK_UNINTERRUPTIBLE` (`D` state) stalls and dropping phantom +6.00 loadavg.
+* **HMP Big Core Fast Migration Engine**:
+  * Configured `hmp_aggressive_up_migration = 1`, `hmp_packing_enabled = 0`, `hmp_up_threshold = 300`, and `hmp_down_threshold = 150`, allowing immediate execution of foreground and UI tasks on high-performance Cortex-A73 cores.
+  * Wired dynamic HMP reconfiguration directly into `pox_gaming_mode_set()` for instant big-core acceleration during gaming.
+* **Sultan Debloat & Printk Lock Contention Elimination**:
+  * Integrated `CONFIG_SULTAN_DEBLOAT=y`, filtering non-critical logging chatter before acquiring `logbuf_lock`.
+  * Silenced periodic fuelgauge (`s2mu004`) and fingerprint SPI (`et5xx` / `et7xx`) debug spam.
+* **Flash Storage I/O Optimization**:
+  * Configured `CONFIG_DEFAULT_NOOP=y` and `CONFIG_DEFAULT_IOSCHED="noop"` to eliminate rotational seek queuing overhead on eMMC storage.
+* **AnyKernel3 Automated Overclock Tuning**:
+  * Bundled and deployed `/data/adb/service.d/99-pox-overclock-maxperf.sh` across all variants to enforce zero-lag interactive governors, 1100 MHz GPU clocks, and fast devfreq buses upon boot completion.
 
 ---
 

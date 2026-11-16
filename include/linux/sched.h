@@ -1269,6 +1269,7 @@ extern int get_hmp_boost(void);
 extern int get_hmp_semiboost(void);
 extern int set_hmp_up_threshold(int value);
 extern int set_hmp_down_threshold(int value);
+extern int set_hmp_packing_enable(int enable);
 extern int set_active_down_migration(int enable);
 extern int set_hmp_aggressive_up_migration(int enable);
 extern int set_hmp_aggressive_yield(int enable);

@@ -278,14 +278,14 @@ static int exynos_cpufreq_driver_init(struct cpufreq_policy *policy)
 		return ret;
 	}
 
-	/* User request: ceiling is default and works all the time */
-	policy->min = policy->max;
-	policy->cur = domain->max_freq;
+	policy->cur = get_freq(domain);
+	policy->min = domain->min_freq;
+	policy->max = domain->max_freq;
 	policy->cpuinfo.transition_latency = TRANSITION_LATENCY;
 	cpumask_copy(policy->cpus, &domain->cpus);
 
-	pr_info("CPUFREQ domain%d registered (ceiling locked: %u kHz)\n",
-		domain->id, domain->max_freq);
+	pr_info("CPUFREQ domain%d registered (%u - %u kHz)\n",
+		domain->id, domain->min_freq, domain->max_freq);
 
 	return 0;
 }
@@ -296,9 +296,6 @@ static int exynos_cpufreq_verify(struct cpufreq_policy *policy)
 
 	if (!domain)
 		return -EINVAL;
-
-	/* Enforce ceiling floor */
-	policy->min = policy->max;
 
 	return cpufreq_frequency_table_verify(policy, domain->freq_table);
 }
@@ -404,11 +401,14 @@ static int exynos_cpufreq_suspend(struct cpufreq_policy *policy)
 	if (!domain)
 		return -EINVAL;
 
-	/* Ceiling locked at all times */
-	freq = domain->max_freq;
+	/* Suspend to resume_freq or min_freq */
+	if (system_state == SYSTEM_RESTART && domain->id != 0)
+		freq = domain->min_freq;
+	else
+		freq = domain->resume_freq;
 
-	pm_qos_update_request(&domain->min_qos_req, freq);
-	pm_qos_update_request(&domain->max_qos_req, freq);
+	pm_qos_update_request(&domain->min_qos_req, domain->min_freq);
+	pm_qos_update_request(&domain->max_qos_req, domain->max_freq);
 
 	/* To guarantee applying frequency, update_freq() is called explicitly */
 	update_freq(domain, freq);
@@ -433,7 +433,7 @@ static int exynos_cpufreq_resume(struct cpufreq_policy *policy)
 
 	enable_domain(domain);
 
-	pm_qos_update_request(&domain->min_qos_req, domain->max_freq);
+	pm_qos_update_request(&domain->min_qos_req, domain->min_freq);
 	pm_qos_update_request(&domain->max_qos_req, domain->max_freq);
 
 	return 0;
@@ -928,9 +928,8 @@ static __init int init_pm_qos(struct exynos_cpufreq_domain *domain,
 	pm_qos_add_notifier(domain->pm_qos_max_class,
 				&domain->pm_qos_max_notifier);
 
-	/* Enforce ceiling as default minimum QoS request */
 	pm_qos_add_request(&domain->min_qos_req,
-			domain->pm_qos_min_class, domain->max_freq);
+			domain->pm_qos_min_class, domain->min_freq);
 	pm_qos_add_request(&domain->max_qos_req,
 			domain->pm_qos_max_class, domain->max_freq);
 

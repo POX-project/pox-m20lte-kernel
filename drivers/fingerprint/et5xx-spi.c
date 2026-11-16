@@ -1390,7 +1390,7 @@ static void etspi_work_func_debug(struct work_struct *work)
 	if (g_data->ldo_pin)
 		ldo_value = gpio_get_value(g_data->ldo_pin);
 
-	pr_info("%s ldo: %d, sleep: %d, tz: %d, spi_value: 0x%x, type: %s\n",
+	pr_debug("%s ldo: %d, sleep: %d, tz: %d, spi_value: 0x%x, type: %s\n",
 		__func__,
 		ldo_value, gpio_get_value(g_data->sleepPin),
 		g_data->tz_mode, g_data->spi_value,

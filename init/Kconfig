@@ -1528,6 +1528,14 @@ config SYSCTL_SYSCALL
 	  trying to save some space it is probably safe to disable this,
 	  making your kernel marginally smaller.
 
+config SULTAN_DEBLOAT
+	bool "Sultan Debloat Architecture"
+	default y
+	help
+	  Enable Sultan-style performance debloat, reducing non-critical
+	  diagnostic log contention and console lock jitter to improve
+	  system responsiveness and framerate consistency.
+
 	  If unsure say N here.
 
 config KALLSYMS

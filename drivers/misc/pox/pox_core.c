@@ -324,14 +324,37 @@ int pox_gaming_mode_set(int mode)
 		pox_kprofiles_state = KPROFILES_PERFORMANCE;
 		pox_touch_game_mode_val = 1;
 		pox_touch_sensitivity_val = 1;
+#ifdef CONFIG_SCHED_HMP
+		set_hmp_aggressive_up_migration(1);
+		set_hmp_packing_enable(0);
+		if (mode >= GAMING_MODE_EXTREME) {
+			set_hmp_up_threshold(250);
+			set_hmp_down_threshold(120);
+		} else {
+			set_hmp_up_threshold(300);
+			set_hmp_down_threshold(150);
+		}
+#endif
 	} else if (mode == GAMING_MODE_POWERSAVE) {
 		pox_kprofiles_state = KPROFILES_BATTERY;
 		pox_touch_game_mode_val = 0;
 		pox_touch_sensitivity_val = 0;
+#ifdef CONFIG_SCHED_HMP
+		set_hmp_aggressive_up_migration(0);
+		set_hmp_packing_enable(1);
+		set_hmp_up_threshold(600);
+		set_hmp_down_threshold(250);
+#endif
 	} else {
 		pox_kprofiles_state = KPROFILES_BALANCED;
 		pox_touch_game_mode_val = 0;
 		pox_touch_sensitivity_val = 1;
+#ifdef CONFIG_SCHED_HMP
+		set_hmp_aggressive_up_migration(1);
+		set_hmp_packing_enable(0);
+		set_hmp_up_threshold(350);
+		set_hmp_down_threshold(180);
+#endif
 	}
 	mutex_unlock(&pox_lock);
 	pr_info("Gaming mode set to %d (Kprofiles: %d)\n", mode, pox_kprofiles_state);
@@ -1563,8 +1586,8 @@ static int __init pox_core_init(void)
 	if (sound_kobj)
 		sysfs_create_file(sound_kobj, &active_mic_kobj_attr.attr);
 
-	/* 9. Apply Default Pox Profile (Onyx: Performance & True Tone D65) */
-	pox_gaming_mode_set(GAMING_MODE_ENABLED);
+	/* 9. Apply Default Pox Profile (Onyx: Extreme Performance & True Tone D65) */
+	pox_gaming_mode_set(GAMING_MODE_EXTREME);
 
 	pr_info("Pox Kernel Core Subsystem initialized successfully (Version %s, Onyx Active).\n",
 		POX_KERNEL_VERSION);

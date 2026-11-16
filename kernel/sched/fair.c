@@ -2718,8 +2718,9 @@ unsigned long exynos_scale_freq_capacity(struct sched_domain *sd, int cpu)
  * tweaking suit particular needs.
  */
 
-unsigned int hmp_up_threshold = 700;
-unsigned int hmp_down_threshold = 256;
+/* Pox zero-lag responsiveness: fast migration to Cortex-A73 big cores */
+unsigned int hmp_up_threshold = 300;
+unsigned int hmp_down_threshold = 150;
 
 unsigned int hmp_semiboost_up_threshold = 400;
 unsigned int hmp_semiboost_down_threshold = 150;
@@ -2730,7 +2731,8 @@ u64 hmp_up_compst_ratio = 512; /* HMP UP COMPENSATION RATIO */
 u64 hmp_down_compst_ratio = 2048; /* HMP DOWN COMPENSATION RATIO */
 #endif	/* CONFIG_CPU_FREQ_GOV_SCHEDUTIL */
 
-unsigned int hmp_packing_enabled = 1;
+/* Disable task packing on little cores for smooth interactive performance */
+unsigned int hmp_packing_enabled = 0;
 unsigned int hmp_packing_threshold = 460;	/* 45% of the NICE_0_LOAD */
 
 #ifdef CONFIG_SCHED_HMP_TASK_BASED_SOFTLANDING
@@ -5740,7 +5742,7 @@ static int hmp_family_boost_val;
 static int hmp_semiboost_val;
 static int hmp_boostpulse;
 static int hmp_active_down_migration;
-static int hmp_aggressive_up_migration;
+static int hmp_aggressive_up_migration = 1;
 static int hmp_aggressive_yield;
 #ifdef CONFIG_SCHED_HMP_SELECTIVE_BOOST_WITH_NITP
 static int hmp_selective_boost_val;
@@ -6436,6 +6438,11 @@ int set_hmp_down_threshold(int value)
 {
 	return hmp_down_threshold_from_sysfs(value);
 }
+EXPORT_SYMBOL(set_hmp_down_threshold);
+EXPORT_SYMBOL(set_hmp_up_threshold);
+EXPORT_SYMBOL(set_hmp_aggressive_up_migration);
+EXPORT_SYMBOL(set_hmp_boost);
+
 /* packing value must be non-negative */
 static int hmp_packing_enable_from_sysfs(int value)
 {
@@ -6445,6 +6452,12 @@ static int hmp_packing_enable_from_sysfs(int value)
 	hmp_packing_enabled = value;
 	return value;
 }
+
+int set_hmp_packing_enable(int enable)
+{
+	return hmp_packing_enable_from_sysfs(enable);
+}
+EXPORT_SYMBOL(set_hmp_packing_enable);
 
 static int hmp_packing_threshold_from_sysfs(int value)
 {

@@ -316,7 +316,7 @@ static int devfreq_simple_interactive_register_notifier(struct devfreq *df)
 	init_timer(&data->freq_timer);
 #endif
 
-	data->change_freq_task = kthread_create(devfreq_change_freq_task, df, "simpleinteractive");
+	data->change_freq_task = kthread_run(devfreq_change_freq_task, df, "simpleinteractive");
 
 	if (IS_ERR(data->change_freq_task)) {
 		pr_err("%s: failed kthread_create for simpleinteractive governor\n", __func__);
