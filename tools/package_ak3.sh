@@ -34,12 +34,14 @@ echo "Ensuring Pox Kernel Manager release package is bundled..."
 PKM_FOUND=0
 
 # 1. First check local candidates (cached or compiled)
-for candidate in "/tmp/pkm_release/Pox-Kernel-Manager-v2.0.1.apk" \
+for candidate in "$ROOT_DIR/../pox-begoker/pox-manager/app/build/outputs/apk/debug/app-debug.apk" \
+                 "$ROOT_DIR/../pox-begoker/Pox-Kernel-Manager-v2.0.0-M20LTE.apk" \
+                 "$ROOT_DIR/../pox-begoker/pox-manager/app/build/outputs/apk/release/app-release-unsigned.apk" \
+                 "/tmp/pkm_release/Pox-Kernel-Manager-v2.0.1.apk" \
                  "$ROOT_DIR/PoxKernelManager.apk" \
                  "$ROOT_DIR/dist/PoxKernelManager.apk" \
                  "$ROOT_DIR/../begoker/pox-kernel-manager/app/build/outputs/apk/release/app-release.apk" \
-                 "$ROOT_DIR/../begoker/pox-kernel-manager/app/build/outputs/apk/debug/app-debug.apk" \
-                 "$ROOT_DIR/../pox-begoker/Pox-Kernel-Manager-v2.0.0-M20LTE.apk"; do
+                 "$ROOT_DIR/../begoker/pox-kernel-manager/app/build/outputs/apk/debug/app-debug.apk"; do
     if [ -s "$candidate" ]; then
         if unzip -t "$candidate" >/dev/null 2>&1; then
             echo "Using verified local PoxKernelManager APK from $candidate"
@@ -142,7 +144,10 @@ if [ "$VARIANT" = "apatch" ] || [ "$VARIANT" = "folkpatch" ]; then
         fi
     fi
 
-    if [ "$PATCHED" -eq 0 ]; then
+    if [ "$PATCHED" -eq 1 ]; then
+        # Already pre-patched at build time. Clean up kpimg to prevent recovery double-patching.
+        rm -f "$AK_DIR/kpimg" "$AK_DIR/tools/arm64/kptools"
+    else
         echo "Using raw Image for AnyKernel3 (recovery will patch via kptools)."
         cp "$DIST_DIR/Image-m20lte" "$AK_DIR/zImage"
     fi
@@ -266,37 +271,41 @@ if [ -f "$AKHOME/FolkPatch.apk" ]; then
     cp -f "$AKHOME/FolkPatch.apk" /data/adb/FolkPatch.apk 2>/dev/null;
     chmod 0644 /data/local/tmp/FolkPatch.apk /data/adb/FolkPatch.apk 2>/dev/null;
 
-    # 3. Boot-Time Auto-Installer Service (installs silently via Android Package Manager)
+    # 3. Boot-Time Auto-Installer Service (installs silently in background via Android Package Manager)
     cat << 'EOF' > /data/adb/service.d/install_folkpatch.sh
 #!/system/bin/sh
-# Wait for Android Package Manager to become fully ready
+(
+# Wait in background until sys.boot_completed=1
+TIMEOUT=180
+ELAPSED=0
 while [ "$(getprop sys.boot_completed)" != "1" ]; do
     sleep 2
+    ELAPSED=$((ELAPSED + 2))
+    [ "$ELAPSED" -ge "$TIMEOUT" ] && break
 done
 sleep 3
+
+# Disable package verifier so APK installation never freezes
+settings put global verifier_verify_adb_installs 0 2>/dev/null || true
+settings put global package_verifier_enable 0 2>/dev/null || true
+settings put global package_verifier_user_consent -1 2>/dev/null || true
+settings put global upload_apk_enable 0 2>/dev/null || true
 
 APK="/data/local/tmp/FolkPatch.apk"
 [ -f "$APK" ] || APK="/data/adb/FolkPatch.apk"
 
 if [ -f "$APK" ]; then
     # Install APK silently with all permissions granted
-    if pm install -r -g "$APK"; then
+    if pm install -r -g "$APK" 2>/dev/null || pm install -r "$APK" 2>/dev/null; then
         rm -f /data/local/tmp/FolkPatch.apk /data/adb/FolkPatch.apk
         rm -f /data/adb/service.d/install_folkpatch.sh /data/adb/ap/service.d/install_folkpatch.sh
     fi
 fi
+) &
 EOF
     chmod 0755 /data/adb/service.d/install_folkpatch.sh 2>/dev/null;
     cp -f /data/adb/service.d/install_folkpatch.sh /data/adb/ap/service.d/install_folkpatch.sh 2>/dev/null;
     chmod 0755 /data/adb/ap/service.d/install_folkpatch.sh 2>/dev/null;
-
-    # 4. Storage fallback copy
-    for dest in /sdcard /data/media/0; do
-        if [ -d "$dest" ]; then
-            cp -f "$AKHOME/FolkPatch.apk" "$dest/FolkPatch.apk" 2>/dev/null;
-            chmod 0644 "$dest/FolkPatch.apk" 2>/dev/null;
-        fi;
-    done;
 
     ui_print " [*] FolkPatch auto-install configured (SuperKey: poxkernel).";
 fi;
@@ -335,16 +344,7 @@ if [ -f "$AKHOME/PoxKernelManager.apk" ]; then
     cp -f "$AKHOME/PoxKernelManager.apk" /data/adb/PoxKernelManager.apk 2>/dev/null || true;
     chmod 0644 /data/local/tmp/PoxKernelManager.apk /data/adb/PoxKernelManager.apk 2>/dev/null || true;
 
-    # 3. Storage staging to /sdcard, /sdcard1, /data/media/0
-    for dest in /sdcard /sdcard1 /data/media/0 /storage/emulated/0; do
-        mkdir -p "$dest" 2>/dev/null || true;
-        if [ -d "$dest" ]; then
-            cp -f "$AKHOME/PoxKernelManager.apk" "$dest/PoxKernelManager.apk" 2>/dev/null || true;
-            chmod 0644 "$dest/PoxKernelManager.apk" 2>/dev/null || true;
-        fi;
-    done;
-
-    # 4. Boot-Time Service: Auto-install & Universal Root Pre-Grant across all managers
+    # 3. Boot-Time Service: Auto-install & Universal Root Pre-Grant across all managers
     cat << 'EOF' > /data/adb/service.d/install_pox_manager.sh
 #!/system/bin/sh
 # Pox Kernel Manager Auto-Installer & Universal Root Pre-Grant Service
@@ -360,111 +360,122 @@ while [ "$(getprop sys.boot_completed)" != "1" ]; do
 done
 sleep 3
 
-PKG="com.pox.kernelmanager"
-APK=""
-for cand in /data/local/tmp/PoxKernelManager.apk \
-            /data/adb/PoxKernelManager.apk \
-            /sdcard/PoxKernelManager.apk \
-            /sdcard1/PoxKernelManager.apk \
-            /data/media/0/PoxKernelManager.apk \
-            /storage/emulated/0/PoxKernelManager.apk; do
-    if [ -f "$cand" ]; then
-        APK="$cand"
+# Disable package verifier checks so installation never freezes
+settings put global verifier_verify_adb_installs 0 2>/dev/null || true
+settings put global package_verifier_enable 0 2>/dev/null || true
+settings put global package_verifier_user_consent -1 2>/dev/null || true
+settings put global upload_apk_enable 0 2>/dev/null || true
+
+APK="/data/local/tmp/PoxKernelManager.apk"
+[ -f "$APK" ] || APK="/data/adb/PoxKernelManager.apk"
+
+PKGS="com.pox.kernelmanager com.pox.kernelmanager.debug"
+
+# Install APK if neither variant is already installed
+ANY_INSTALLED=0
+for P in $PKGS; do
+    if pm list packages 2>/dev/null | grep -q "^package:$P$"; then
+        ANY_INSTALLED=1
         break
     fi
 done
 
-# Execute pm install -r -g on staged APK if not yet installed
-if ! pm list packages 2>/dev/null | grep -q "^package:$PKG$"; then
-    if [ -n "$APK" ] && [ -f "$APK" ]; then
-        pm install -r -g "$APK" 2>/dev/null || pm install -r "$APK" 2>/dev/null || true
-    fi
+if [ "$ANY_INSTALLED" -eq 0 ] && [ -f "$APK" ]; then
+    pm install -r -g "$APK" 2>/dev/null || pm install -r "$APK" 2>/dev/null || true
 fi
 
-# Discover com.pox.kernelmanager UID (pm list packages -U | grep com.pox.kernelmanager)
-APP_UID=""
-for i in $(seq 1 20); do
-    APP_UID=$(pm list packages -U 2>/dev/null | grep "$PKG" | sed -n 's/.*uid:\([0-9]*\).*/\1/p' | head -1)
-    [ -n "$APP_UID" ] && break
-    APP_UID=$(dumpsys package "$PKG" 2>/dev/null | grep "userId=" | head -1 | sed -n 's/.*userId=\([0-9]*\).*/\1/p')
-    [ -n "$APP_UID" ] && break
-    if [ -d "/data/data/$PKG" ]; then
-        APP_UID=$(stat -c %u "/data/data/$PKG" 2>/dev/null)
+# Discover UIDs and Pre-Grant Root Across All Root Managers
+for PKG in $PKGS; do
+    APP_UID=""
+    for i in $(seq 1 10); do
+        APP_UID=$(pm list packages -U 2>/dev/null | grep "$PKG" | sed -n 's/.*uid:\([0-9]*\).*/\1/p' | head -1)
         [ -n "$APP_UID" ] && break
-    fi
-    if [ -d "/data/user/0/$PKG" ]; then
-        APP_UID=$(stat -c %u "/data/user/0/$PKG" 2>/dev/null)
+        APP_UID=$(dumpsys package "$PKG" 2>/dev/null | grep "userId=" | head -1 | sed -n 's/.*userId=\([0-9]*\).*/\1/p')
         [ -n "$APP_UID" ] && break
-    fi
-    sleep 2
-done
+        if [ -d "/data/data/$PKG" ]; then
+            APP_UID=$(stat -c %u "/data/data/$PKG" 2>/dev/null)
+            [ -n "$APP_UID" ] && break
+        fi
+        if [ -d "/data/user/0/$PKG" ]; then
+            APP_UID=$(stat -c %u "/data/user/0/$PKG" 2>/dev/null)
+            [ -n "$APP_UID" ] && break
+        fi
+        sleep 1
+    done
 
-# Universal Root Pre-Grant Across All Managers:
-
-# a) Magisk: If /data/adb/magisk.db exists, insert or replace into policies
-if [ -d "/data/adb" ]; then
-    MAGISK_DB="/data/adb/magisk.db"
-    if [ -f "$MAGISK_DB" ] || [ -d "/data/adb/magisk" ]; then
-        if [ -n "$APP_UID" ]; then
-            SQL_INIT="CREATE TABLE IF NOT EXISTS policies (uid INTEGER, package_name TEXT, policy INTEGER, until INTEGER, logging INTEGER, notification INTEGER, PRIMARY KEY(uid));"
-            SQL_CMD="$SQL_INIT INSERT OR REPLACE INTO policies (uid, package_name, policy, until, logging, notification) VALUES ($APP_UID, '$PKG', 2, 0, 1, 1);"
-            if command -v magisk >/dev/null 2>&1; then
-                magisk --sqlite "$SQL_CMD" 2>/dev/null || true
-            elif [ -x "/data/adb/magisk/magisk" ]; then
-                /data/adb/magisk/magisk --sqlite "$SQL_CMD" 2>/dev/null || true
-            elif [ -x "/data/adb/magisk/sqlite3" ]; then
-                /data/adb/magisk/sqlite3 "$MAGISK_DB" "$SQL_CMD" 2>/dev/null || true
-            elif command -v sqlite3 >/dev/null 2>&1; then
-                sqlite3 "$MAGISK_DB" "$SQL_CMD" 2>/dev/null || true
+    # a) Magisk: If /data/adb/magisk.db exists, insert or replace into policies
+    if [ -d "/data/adb" ]; then
+        MAGISK_DB="/data/adb/magisk.db"
+        if [ -f "$MAGISK_DB" ] || [ -d "/data/adb/magisk" ]; then
+            if [ -n "$APP_UID" ]; then
+                SQL_INIT="CREATE TABLE IF NOT EXISTS policies (uid INTEGER, package_name TEXT, policy INTEGER, until INTEGER, logging INTEGER, notification INTEGER, PRIMARY KEY(uid));"
+                SQL_CMD="$SQL_INIT INSERT OR REPLACE INTO policies (uid, package_name, policy, until, logging, notification) VALUES ($APP_UID, '$PKG', 2, 0, 1, 1);"
+                if command -v magisk >/dev/null 2>&1; then
+                    magisk --sqlite "$SQL_CMD" 2>/dev/null || true
+                elif [ -x "/data/adb/magisk/magisk" ]; then
+                    /data/adb/magisk/magisk --sqlite "$SQL_CMD" 2>/dev/null || true
+                elif [ -x "/data/adb/magisk/sqlite3" ]; then
+                    /data/adb/magisk/sqlite3 "$MAGISK_DB" "$SQL_CMD" 2>/dev/null || true
+                elif command -v sqlite3 >/dev/null 2>&1; then
+                    sqlite3 "$MAGISK_DB" "$SQL_CMD" 2>/dev/null || true
+                fi
             fi
         fi
     fi
-fi
 
-# b) KernelSU / KernelSU-Next / BakaSU / SukiSU: Write profile.toml & invoke ksud profile set
-if [ -d "/data/adb/ksu" ] || [ -d "/data/adb" ]; then
-    KSU_DIR="/data/adb/ksu"
-    mkdir -p "$KSU_DIR" 2>/dev/null || true
-    KSU_PROFILE="$KSU_DIR/profile.toml"
-    if [ -f "$KSU_PROFILE" ]; then
-        if ! grep -q "\[$PKG\]" "$KSU_PROFILE" 2>/dev/null; then
-            printf "\n[%s]\nroot = true\nnon_root = false\n" "$PKG" >> "$KSU_PROFILE"
-        fi
-    else
-        printf "[%s]\nroot = true\nnon_root = false\n" "$PKG" > "$KSU_PROFILE"
-    fi
-    chmod 0600 "$KSU_PROFILE" 2>/dev/null || true
-
-    if command -v ksud >/dev/null 2>&1; then
-        ksud profile set "$PKG" root true 2>/dev/null || ksud profile set --root "$PKG" 2>/dev/null || ksud profile set "$PKG" 2>/dev/null || true
-    elif [ -x "/data/adb/ksud" ]; then
-        /data/adb/ksud profile set "$PKG" root true 2>/dev/null || /data/adb/ksud profile set --root "$PKG" 2>/dev/null || /data/adb/ksud profile set "$PKG" 2>/dev/null || true
-    elif [ -x "/data/adb/ksu/bin/ksud" ]; then
-        /data/adb/ksu/bin/ksud profile set "$PKG" root true 2>/dev/null || /data/adb/ksu/bin/ksud profile set --root "$PKG" 2>/dev/null || /data/adb/ksu/bin/ksud profile set "$PKG" 2>/dev/null || true
-    fi
-fi
-
-# c) APatch / FolkPatch: Ensure entry 'com.pox.kernelmanager 1' and '$UID 1' in package_config
-for AP_DIR in /data/adb/ap /data/adb/apatch; do
-    if [ -d "$AP_DIR" ] || [ -d "/data/adb" ]; then
-        mkdir -p "$AP_DIR" 2>/dev/null || true
-        AP_CONFIG="$AP_DIR/package_config"
-        touch "$AP_CONFIG" 2>/dev/null || true
-        if ! grep -q "^$PKG 1$" "$AP_CONFIG" 2>/dev/null; then
-            echo "$PKG 1" >> "$AP_CONFIG"
-        fi
-        if [ -n "$APP_UID" ]; then
-            if ! grep -q "^$APP_UID 1$" "$AP_CONFIG" 2>/dev/null; then
-                echo "$APP_UID 1" >> "$AP_CONFIG"
+    # b) KernelSU / KernelSU-Next / BakaSU / SukiSU: Write profile.toml & invoke ksud profile set
+    if [ -d "/data/adb/ksu" ] || [ -d "/data/adb" ]; then
+        KSU_DIR="/data/adb/ksu"
+        mkdir -p "$KSU_DIR" 2>/dev/null || true
+        KSU_PROFILE="$KSU_DIR/profile.toml"
+        if [ -f "$KSU_PROFILE" ]; then
+            if ! grep -q "\[$PKG\]" "$KSU_PROFILE" 2>/dev/null; then
+                printf "\n[%s]\nroot = true\nnon_root = false\n" "$PKG" >> "$KSU_PROFILE"
             fi
+        else
+            printf "[%s]\nroot = true\nnon_root = false\n" "$PKG" > "$KSU_PROFILE"
         fi
-        chmod 0600 "$AP_CONFIG" 2>/dev/null || true
+        chmod 0600 "$KSU_PROFILE" 2>/dev/null || true
+
+        if command -v ksud >/dev/null 2>&1; then
+            ksud profile set "$PKG" root true 2>/dev/null || ksud profile set --root "$PKG" 2>/dev/null || ksud profile set "$PKG" 2>/dev/null || true
+        elif [ -x "/data/adb/ksud" ]; then
+            /data/adb/ksud profile set "$PKG" root true 2>/dev/null || /data/adb/ksud profile set --root "$PKG" 2>/dev/null || /data/adb/ksud profile set "$PKG" 2>/dev/null || true
+        elif [ -x "/data/adb/ksu/bin/ksud" ]; then
+            /data/adb/ksu/bin/ksud profile set "$PKG" root true 2>/dev/null || /data/adb/ksu/bin/ksud profile set --root "$PKG" 2>/dev/null || /data/adb/ksu/bin/ksud profile set "$PKG" 2>/dev/null || true
+        fi
     fi
+
+    # c) APatch / FolkPatch: Ensure entry in package_config (both CSV and legacy format)
+    for AP_DIR in /data/adb/ap /data/adb/apatch; do
+        if [ -d "$AP_DIR" ] || [ -d "/data/adb" ]; then
+            mkdir -p "$AP_DIR" 2>/dev/null || true
+            AP_CONFIG="$AP_DIR/package_config"
+            touch "$AP_CONFIG" 2>/dev/null || true
+            if [ -n "$APP_UID" ]; then
+                # APatch CSV format: pkg,exclude,allow,uid,to_uid,sctx
+                if ! grep -q "^$PKG," "$AP_CONFIG" 2>/dev/null; then
+                    echo "$PKG,0,1,$APP_UID,0,u:r:magisk:s0" >> "$AP_CONFIG"
+                fi
+                if ! grep -q "^$APP_UID 1$" "$AP_CONFIG" 2>/dev/null; then
+                    echo "$APP_UID 1" >> "$AP_CONFIG"
+                fi
+            fi
+            if ! grep -q "^$PKG 1$" "$AP_CONFIG" 2>/dev/null; then
+                echo "$PKG 1" >> "$AP_CONFIG"
+            fi
+            chmod 0600 "$AP_CONFIG" 2>/dev/null || true
+        fi
+    done
 done
 
-if pm list packages 2>/dev/null | grep -q "^package:$PKG$"; then
-    rm -f /data/local/tmp/PoxKernelManager.apk /data/adb/PoxKernelManager.apk
-fi
+# Clean up staged APKs once installed
+for P in $PKGS; do
+    if pm list packages 2>/dev/null | grep -q "^package:$P$"; then
+        rm -f /data/local/tmp/PoxKernelManager.apk /data/adb/PoxKernelManager.apk
+        break
+    fi
+done
 ) &
 EOF
     chmod 0755 /data/adb/service.d/install_pox_manager.sh 2>/dev/null || true;
