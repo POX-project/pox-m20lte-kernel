@@ -484,11 +484,32 @@ EOF
     cp -f /data/adb/service.d/install_pox_manager.sh /data/adb/ksu/service.d/install_pox_manager.sh 2>/dev/null || true;
     chmod 0755 /data/adb/ap/service.d/install_pox_manager.sh /data/adb/ksu/service.d/install_pox_manager.sh 2>/dev/null || true;
 
-    # 4. Overclock & Zero-Lag Performance Tuning Service (All Variants)
+    # 4. Hardware Video Scaler Fix for scrcpy & HW Encoding (All Root Flavors)
+    for pdir in /data/adb/post-fs-data.d /data/adb/service.d /data/adb/ap/post-fs-data.d /data/adb/ap/service.d /data/adb/ksu/post-fs-data.d /data/adb/ksu/service.d; do
+        mkdir -p "$pdir" 2>/dev/null || true
+        cat << 'SCALER_EOF' > "$pdir/00-m2m1shot-scaler.sh"
+#!/system/bin/sh
+if [ ! -e /dev/m2m1shot_scaler1 ] && [ -e /dev/m2m1shot_scaler0 ]; then
+    ln -sf /dev/m2m1shot_scaler0 /dev/m2m1shot_scaler1
+    chmod 0660 /dev/m2m1shot_scaler0 /dev/m2m1shot_scaler1 2>/dev/null || true
+    chown mediacodec:drmrpc /dev/m2m1shot_scaler1 2>/dev/null || true
+fi
+SCALER_EOF
+        chmod 0755 "$pdir/00-m2m1shot-scaler.sh" 2>/dev/null || true
+    done
+
+    # 5. Overclock & Zero-Lag Performance Tuning Service (All Variants)
     cat << 'EOF' > /data/adb/service.d/99-pox-overclock-maxperf.sh
 #!/system/bin/sh
 # Pox Kernel Onyx Overclock & Zero-Lag Tuning Service
 (
+# Ensure m2m1shot_scaler1 symlink exists for hardware video encoding & scrcpy
+if [ ! -e /dev/m2m1shot_scaler1 ] && [ -e /dev/m2m1shot_scaler0 ]; then
+    ln -sf /dev/m2m1shot_scaler0 /dev/m2m1shot_scaler1
+    chmod 0660 /dev/m2m1shot_scaler0 /dev/m2m1shot_scaler1 2>/dev/null || true
+    chown mediacodec:drmrpc /dev/m2m1shot_scaler1 2>/dev/null || true
+fi
+
 while [ "$(getprop sys.boot_completed)" != "1" ]; do
     sleep 2
 done
