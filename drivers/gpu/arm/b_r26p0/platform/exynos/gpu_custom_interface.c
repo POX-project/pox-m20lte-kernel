@@ -153,8 +153,9 @@ static ssize_t set_clock(struct device *dev, struct device_attribute *attr, cons
 		}
 		platform->tmu_status = false;
 #ifdef CONFIG_MALI_DVFS
-		if (platform->dvfs_status)
-			gpu_dvfs_on_off(false);
+		/* Preserve DVFS active so dynamic scaling functions up to 1100 MHz */
+		if (!platform->dvfs_status)
+			gpu_dvfs_on_off(true);
 #endif /* CONFIG_MALI_DVFS */
 		gpu_set_target_clk_vol(clk, false);
 		cur_state = true;

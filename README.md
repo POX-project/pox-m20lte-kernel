@@ -2,7 +2,7 @@
 
 [![GitHub Repo](https://img.shields.io/badge/GitHub-POX--project%2Fpox--m20lte--kernel-181717.svg?logo=github)](https://github.com/POX-project/pox-m20lte-kernel)
 [![Kernel Version](https://img.shields.io/badge/Kernel-Linux%204.4.177-green.svg?logo=linux)](https://github.com/POX-project/pox-m20lte-kernel)
-[![Pox Release](https://img.shields.io/badge/Pox%20Release-v2.1.1-blue.svg)](https://github.com/POX-project/pox-m20lte-kernel)
+[![Pox Release](https://img.shields.io/badge/Pox%20Release-v2.1.2-blue.svg)](https://github.com/POX-project/pox-m20lte-kernel)
 [![Device](https://img.shields.io/badge/Device-Samsung%20Galaxy%20M20%20(m20lte)-orange.svg?logo=samsung)](https://github.com/POX-project/pox-m20lte-kernel)
 [![SoC](https://img.shields.io/badge/SoC-Samsung%20Exynos%207904%20(universal7885)-red.svg)](https://github.com/POX-project/pox-m20lte-kernel)
 [![Solidarity](https://img.shields.io/badge/Stand%20With-Free%20Palestine%20🇵🇸-red?style=flat&colorA=000000&colorB=007A3D)](https://en.wikipedia.org/wiki/State_of_Palestine)
@@ -31,6 +31,7 @@
   - [Version 2.0.0 (Mainline / Historical)](#2-version-200-mainline--historical)
   - [Version 2.1.0 (Zero-Lag Engine & RAM Management)](#3-version-210-zero-lag-engine-max-charging-speed--modern-ram-management)
   - [Version 2.1.1 (Dynamic Overclock, Sultan Debloat & HMP Migration)](#4-version-211-dynamic-overclock-restoration-devfreq-d-state-fix-sultan-debloat--hmp-zero-lag-migration)
+  - [Version 2.1.2 (In-App Zero Lag, HMP Selective Boost & Compositor Affinity)](#5-version-212-in-app-zero-lag-engine-hmp-selective-boost-compositor-affinity--touch-pm-qos)
 - [Editions & The Variant Matrix](#editions--the-variant-matrix)
 - [Comprehensive Kernel Addons & Features](#comprehensive-kernel-addons--features)
   - [1. Touchscreen Anti-Ghosting & Noise Filtration Engine](#1-touchscreen-anti-ghosting--noise-filtration-engine)
@@ -121,8 +122,6 @@ The 2.1.0 release targets absolute performance and lag eradication under Android
 ---
 
 ### 4. Version 2.1.1 (Dynamic Overclock Restoration, Devfreq D-State Fix, Sultan Debloat & HMP Zero-Lag Migration)
-> **STATUS: LATEST ACTIVE MAINLINE RELEASE.**
-
 The 2.1.1 release addresses deep Exynos 7904 scheduling, governor, and background lock contention issues:
 * **Dynamic Overclock Restoration**:
   * Fixed cpufreq scaling bug where `policy->min = policy->max` froze transitions to 0. Restored real-time dynamic scaling across 1.586 GHz little and 2.184 GHz big clusters (`get_freq`, verified frequency tables, and proper QoS limits).
@@ -138,6 +137,30 @@ The 2.1.1 release addresses deep Exynos 7904 scheduling, governor, and backgroun
   * Configured `CONFIG_DEFAULT_NOOP=y` and `CONFIG_DEFAULT_IOSCHED="noop"` to eliminate rotational seek queuing overhead on eMMC storage.
 * **AnyKernel3 Automated Overclock Tuning**:
   * Bundled and deployed `/data/adb/service.d/99-pox-overclock-maxperf.sh` across all variants to enforce zero-lag interactive governors, 1100 MHz GPU clocks, and fast devfreq buses upon boot completion.
+
+---
+
+### 5. Version 2.1.2 (In-App Zero-Lag Engine, HMP Selective Boost, Compositor Affinity & Touch PM QoS)
+> **STATUS: LATEST ACTIVE MAINLINE RELEASE.**
+
+The 2.1.2 release eliminates in-app stutter and UI thread lag across heavy Android 15 workloads:
+* **HMP Selective & Family Boost for Top-App UI Threads**:
+  * Enabled `hmp_selective_boost_val = 1`, `hmp_family_boost_val = 1`, and `hmp_semiboost_val = 1` by default in the kernel scheduler. Tasks in `/dev/cpuset/top-app` (active foreground app UI and RenderThreads) now bypass load threshold barriers and are instantly scheduled onto Cortex-A73 Big cores (CPUs 6-7 @ 2.184 GHz).
+  * Reduced `load_avg_period_ms` from 32ms to 8ms for 4x faster load ramp, with `up_threshold = 100` and `down_threshold = 40`.
+  * Exported and wired dynamic HMP setters into `pox_gaming_mode_set()`.
+* **Disabled Gentle Fair Sleepers (GFS)**:
+  * Set `SCHED_FEAT(GENTLE_FAIR_SLEEPERS, false)` so waking UI event loops and touch dispatch threads execute immediately without sleeper latency penalties.
+* **Touchscreen Low-Latency PM QoS**:
+  * Added `pm_qos_request` (`PM_QOS_CPU_DMA_LATENCY`, 100us) during touch event processing in `himax_platform.c`, preventing the CPU from dropping into deep C-states during I2C touch transactions and eliminating high input latency.
+* **Mali GPU DVFS Retention**:
+  * Protected DVFS state during clock operations in `gpu_custom_interface.c` so Mali-G71 dynamically scales up to 1100 MHz without getting stuck at reset frequency.
+* **SurfaceFlinger & Hardware Composer Big-Core Affinity**:
+  * Unlocked `/dev/cpuset/system-background` and compositor threads to all cores (`0-7`), removing the little-core bottleneck during multi-layer window composition.
+* **Memory Contention & Direct Reclaim Eradication**:
+  * Tuned `vm_swappiness = 60` and `vfs_cache_pressure = 60` in `pox_core.c` and boot service scripts to prevent ZRAM thrashing on heavy application heaps.
+  * Enforced aggressive low-memory-killer minfree thresholds to ensure physical free RAM remains stable above 250MB, completely eliminating `allocstall` pauses.
+* **Sensor Lock & Log Spam Elimination**:
+  * Silenced periodic proximity sensor offset logging in `gp2ap110s.c` to prevent console lock contention.
 
 ---
 

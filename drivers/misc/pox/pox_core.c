@@ -220,22 +220,22 @@ static void pox_health_calibration_sync(void)
 static void pox_memory_preset(int mode)
 {
 	if (mode > 0) {
-		/* Extreme Performance & Gaming: balanced 100 swappiness (anon:file = 1:1) prevents ZRAM thrash */
-		vm_swappiness = 100;
-		sysctl_vfs_cache_pressure = 100;
+		/* Extreme Performance & Gaming: 60 swappiness prioritizes page cache eviction over anon ZRAM thrashing */
+		vm_swappiness = 60;
+		sysctl_vfs_cache_pressure = 60;
 		page_cluster = 0;
 		vm_dirty_ratio = 10;
 		dirty_background_ratio = 5;
 	} else if (mode == GAMING_MODE_POWERSAVE) {
 		vm_swappiness = 60;
-		sysctl_vfs_cache_pressure = 100;
+		sysctl_vfs_cache_pressure = 80;
 		page_cluster = 0;
 		vm_dirty_ratio = 20;
 		dirty_background_ratio = 10;
 	} else {
-		/* Balanced: optimal 80 swappiness allows smooth page cache reclamation without stalling UI */
-		vm_swappiness = 80;
-		sysctl_vfs_cache_pressure = 100;
+		/* Balanced: 60 swappiness prevents UI stall on heavy heaps */
+		vm_swappiness = 60;
+		sysctl_vfs_cache_pressure = 60;
 		page_cluster = 0;
 		vm_dirty_ratio = 15;
 		dirty_background_ratio = 5;
@@ -327,12 +327,18 @@ int pox_gaming_mode_set(int mode)
 #ifdef CONFIG_SCHED_HMP
 		set_hmp_aggressive_up_migration(1);
 		set_hmp_packing_enable(0);
+		set_hmp_family_boost(1);
+#ifdef CONFIG_SCHED_HMP_SELECTIVE_BOOST_WITH_NITP
+		set_hmp_selective_boost(1);
+#endif
+		set_hmp_semiboost(1);
+		set_hmp_load_avg_period(8);
 		if (mode >= GAMING_MODE_EXTREME) {
-			set_hmp_up_threshold(250);
-			set_hmp_down_threshold(120);
+			set_hmp_up_threshold(100);
+			set_hmp_down_threshold(40);
 		} else {
-			set_hmp_up_threshold(300);
-			set_hmp_down_threshold(150);
+			set_hmp_up_threshold(150);
+			set_hmp_down_threshold(60);
 		}
 #endif
 	} else if (mode == GAMING_MODE_POWERSAVE) {
@@ -342,6 +348,12 @@ int pox_gaming_mode_set(int mode)
 #ifdef CONFIG_SCHED_HMP
 		set_hmp_aggressive_up_migration(0);
 		set_hmp_packing_enable(1);
+		set_hmp_family_boost(0);
+#ifdef CONFIG_SCHED_HMP_SELECTIVE_BOOST_WITH_NITP
+		set_hmp_selective_boost(0);
+#endif
+		set_hmp_semiboost(0);
+		set_hmp_load_avg_period(32);
 		set_hmp_up_threshold(600);
 		set_hmp_down_threshold(250);
 #endif
@@ -352,8 +364,14 @@ int pox_gaming_mode_set(int mode)
 #ifdef CONFIG_SCHED_HMP
 		set_hmp_aggressive_up_migration(1);
 		set_hmp_packing_enable(0);
-		set_hmp_up_threshold(350);
-		set_hmp_down_threshold(180);
+		set_hmp_family_boost(1);
+#ifdef CONFIG_SCHED_HMP_SELECTIVE_BOOST_WITH_NITP
+		set_hmp_selective_boost(1);
+#endif
+		set_hmp_semiboost(1);
+		set_hmp_load_avg_period(16);
+		set_hmp_up_threshold(200);
+		set_hmp_down_threshold(80);
 #endif
 	}
 	mutex_unlock(&pox_lock);

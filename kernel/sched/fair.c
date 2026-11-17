@@ -2718,12 +2718,12 @@ unsigned long exynos_scale_freq_capacity(struct sched_domain *sd, int cpu)
  * tweaking suit particular needs.
  */
 
-/* Pox zero-lag responsiveness: fast migration to Cortex-A73 big cores */
-unsigned int hmp_up_threshold = 300;
-unsigned int hmp_down_threshold = 150;
+/* Pox zero-lag responsiveness: instantaneous migration to Cortex-A73 big cores */
+unsigned int hmp_up_threshold = 100;
+unsigned int hmp_down_threshold = 40;
 
-unsigned int hmp_semiboost_up_threshold = 400;
-unsigned int hmp_semiboost_down_threshold = 150;
+unsigned int hmp_semiboost_up_threshold = 100;
+unsigned int hmp_semiboost_down_threshold = 40;
 
 #if defined(CONFIG_CPU_FREQ_GOV_SCHEDUTIL)
 /* Ex: 256 = /4, 512 = /2, 1024 = x1, 1536 = x1.5, 2048 = x2 */
@@ -5738,14 +5738,14 @@ static struct sched_entity *hmp_get_lightest_task(struct sched_entity* se, int m
 static int hmp_boostpulse_duration = 1000000; /* microseconds */
 static u64 hmp_boostpulse_endtime;
 static int hmp_boost_val;
-static int hmp_family_boost_val;
-static int hmp_semiboost_val;
+static int hmp_family_boost_val = 1;
+static int hmp_semiboost_val = 1;
 static int hmp_boostpulse;
 static int hmp_active_down_migration;
 static int hmp_aggressive_up_migration = 1;
 static int hmp_aggressive_yield;
 #ifdef CONFIG_SCHED_HMP_SELECTIVE_BOOST_WITH_NITP
-static int hmp_selective_boost_val;
+static int hmp_selective_boost_val = 1;
 #endif
 static DEFINE_RAW_SPINLOCK(hmp_boost_lock);
 static DEFINE_RAW_SPINLOCK(hmp_family_boost_lock);
@@ -6442,6 +6442,22 @@ EXPORT_SYMBOL(set_hmp_down_threshold);
 EXPORT_SYMBOL(set_hmp_up_threshold);
 EXPORT_SYMBOL(set_hmp_aggressive_up_migration);
 EXPORT_SYMBOL(set_hmp_boost);
+EXPORT_SYMBOL(set_hmp_family_boost);
+EXPORT_SYMBOL(set_hmp_semiboost);
+
+int set_hmp_load_avg_period(int ms)
+{
+#ifdef CONFIG_HMP_VARIABLE_SCALE
+	if (ms <= 0)
+		return -EINVAL;
+	hmp_data.multiplier = (LOAD_AVG_PERIOD << HMP_VARIABLE_SCALE_SHIFT) / ms;
+	hmp_data.semiboost_multiplier = (LOAD_AVG_PERIOD << HMP_VARIABLE_SCALE_SHIFT) / ms;
+	return 0;
+#else
+	return 0;
+#endif
+}
+EXPORT_SYMBOL(set_hmp_load_avg_period);
 
 /* packing value must be non-negative */
 static int hmp_packing_enable_from_sysfs(int value)
@@ -6473,6 +6489,7 @@ int set_hmp_selective_boost(int enable)
 {
 	return hmp_selective_boost_from_sysfs(enable);
 }
+EXPORT_SYMBOL(set_hmp_selective_boost);
 
 int get_hmp_selective_boost(void)
 {
@@ -6515,6 +6532,12 @@ static void hmp_attr_add(
 static int hmp_attr_init(void)
 {
 	int ret;
+
+#ifdef CONFIG_HMP_VARIABLE_SCALE
+	/* Pox zero-lag responsiveness: 8ms load average period (4x faster ramp) */
+	hmp_data.multiplier = (LOAD_AVG_PERIOD << HMP_VARIABLE_SCALE_SHIFT) / 8;
+	hmp_data.semiboost_multiplier = (LOAD_AVG_PERIOD << HMP_VARIABLE_SCALE_SHIFT) / 8;
+#endif
 
 	hmp_attr_add("load_avg_period_ms",
 		&hmp_data.multiplier,

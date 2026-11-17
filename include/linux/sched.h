@@ -1263,12 +1263,14 @@ struct hmp_domain {
 #define HMP_BOOSTING_ENABLE	1
 #define HMP_BOOSTING_DISABLE	0
 extern int set_hmp_boost(int enable);
+extern int set_hmp_family_boost(int enable);
 extern int set_hmp_semiboost(int enable);
 extern int set_hmp_boostpulse(int duration);
 extern int get_hmp_boost(void);
 extern int get_hmp_semiboost(void);
 extern int set_hmp_up_threshold(int value);
 extern int set_hmp_down_threshold(int value);
+extern int set_hmp_load_avg_period(int ms);
 extern int set_hmp_packing_enable(int enable);
 extern int set_active_down_migration(int enable);
 extern int set_hmp_aggressive_up_migration(int enable);

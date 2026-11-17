@@ -513,18 +513,42 @@ done
 if [ -d /sys/kernel/hmp ]; then
     echo 1 > /sys/kernel/hmp/aggressive_up_migration 2>/dev/null || true
     echo 0 > /sys/kernel/hmp/packing_enable 2>/dev/null || true
-    echo 250 > /sys/kernel/hmp/up_threshold 2>/dev/null || true
-    echo 120 > /sys/kernel/hmp/down_threshold 2>/dev/null || true
+    echo 1 > /sys/kernel/hmp/family_boost 2>/dev/null || true
+    echo 1 > /sys/kernel/hmp/selective_boost 2>/dev/null || true
+    echo 1 > /sys/kernel/hmp/semiboost 2>/dev/null || true
+    echo 8 > /sys/kernel/hmp/load_avg_period_ms 2>/dev/null || true
+    echo 8 > /sys/kernel/hmp/sb_load_avg_period_ms 2>/dev/null || true
+    echo 100 > /sys/kernel/hmp/up_threshold 2>/dev/null || true
+    echo 40 > /sys/kernel/hmp/down_threshold 2>/dev/null || true
+    echo 100 > /sys/kernel/hmp/sb_up_threshold 2>/dev/null || true
+    echo 40 > /sys/kernel/hmp/sb_down_threshold 2>/dev/null || true
 fi
 
-# 3. Mali-G71 GPU 1100 MHz Overclock Lock
+# 3. Mali-G71 GPU 1100 MHz Overclock Lock & DVFS Retention
 MALI=/sys/devices/platform/11500000.mali
 if [ -d "$MALI" ]; then
-    echo 1100000 > "$MALI/dvfs_min_lock" 2>/dev/null || true
+    echo 1 > "$MALI/dvfs" 2>/dev/null || true
+    echo Interactive > "$MALI/dvfs_governor" 2>/dev/null || true
     echo 1100000 > "$MALI/highspeed_clock" 2>/dev/null || true
     echo 10 > "$MALI/highspeed_load" 2>/dev/null || true
+    echo 0 > "$MALI/highspeed_delay" 2>/dev/null || true
     echo always_on > "$MALI/power_policy" 2>/dev/null || true
 fi
+
+# 3b. Display & Compositor Big Core Affinity (SurfaceFlinger & Hardware Composer)
+for cset in /dev/cpuset; do
+    if [ -d "$cset" ]; then
+        echo 0-7 > "$cset/system-background/cpus" 2>/dev/null || true
+        echo 0-7 > "$cset/foreground/cpus" 2>/dev/null || true
+        echo 0-7 > "$cset/top-app/cpus" 2>/dev/null || true
+        echo 1 > "$cset/top-app/selective_boost" 2>/dev/null || true
+        echo 1 > "$cset/top-app/prio_pinning" 2>/dev/null || true
+    fi
+done
+SF_PID=\$(pidof surfaceflinger)
+[ -n "\$SF_PID" ] && taskset -ap ff "\$SF_PID" 2>/dev/null || true
+HWC_PID=\$(pidof android.hardware.composer.hwc3-service.slsi)
+[ -n "\$HWC_PID" ] && taskset -ap ff "\$HWC_PID" 2>/dev/null || true
 
 # 4. Devfreq Memory Bus (MIF) & Interconnect (INT) Ceiling
 for dm in /sys/devices/platform/17000000.exynos-dm/exynos_dm; do
@@ -544,14 +568,20 @@ for blk in /sys/block/mmcblk0/queue; do
     fi
 done
 
-# 6. Pox Core Engine Engagement
+# 6. Memory & LMK Contention Elimination
+setprop sys.lmk.minfree_levels "25600:0,38400:100,51200:200,64000:250,89600:800,115200:900"
+echo "25600,38400,51200,64000,89600,115200" > /sys/module/lowmemorykiller/parameters/minfree 2>/dev/null || true
+echo 60 > /proc/sys/vm/swappiness 2>/dev/null || true
+echo 60 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null || true
+echo 0 > /proc/sys/vm/page-cluster 2>/dev/null || true
+echo 10 > /proc/sys/vm/dirty_ratio 2>/dev/null || true
+echo 5 > /proc/sys/vm/dirty_background_ratio 2>/dev/null || true
+
+# 7. Pox Core Engine Engagement
 [ -f /proc/perfmgr/gaming_mode ] && echo 2 > /proc/perfmgr/gaming_mode 2>/dev/null || true
 [ -f /sys/kernel/gaming_mode ] && echo 2 > /sys/kernel/gaming_mode 2>/dev/null || true
 [ -f /sys/kernel/kprofiles/kp_mode ] && echo 3 > /sys/kernel/kprofiles/kp_mode 2>/dev/null || true
 [ -f /sys/kernel/sched_bore/sched_bore ] && echo 1 > /sys/kernel/sched_bore/sched_bore 2>/dev/null || true
-[ -f /proc/sys/vm/page-cluster ] && echo 0 > /proc/sys/vm/page-cluster 2>/dev/null || true
-[ -f /proc/sys/vm/swappiness ] && echo 100 > /proc/sys/vm/swappiness 2>/dev/null || true
-[ -f /proc/sys/vm/vfs_cache_pressure ] && echo 100 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null || true
 ) &
 EOF
     chmod 0755 /data/adb/service.d/99-pox-overclock-maxperf.sh 2>/dev/null || true;

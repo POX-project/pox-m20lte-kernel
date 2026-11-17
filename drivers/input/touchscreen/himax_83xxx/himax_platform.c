@@ -15,6 +15,10 @@
 
 #include "himax_platform.h"
 #include "himax_common.h"
+#include <linux/pm_qos.h>
+
+static struct pm_qos_request himax_touch_pm_qos;
+static bool himax_touch_pm_qos_active;
 
 #ifdef CONFIG_SAMSUNG_TUI
 #include "stui_inf.h"
@@ -675,7 +679,14 @@ static void himax_ts_isr_func(struct himax_ts_data *ts)
 
 irqreturn_t himax_ts_thread(int irq, void *ptr)
 {
+	/* Require low latency to prevent CPU deep C-states during touch i2c processing */
+	if (himax_touch_pm_qos_active)
+		pm_qos_update_request(&himax_touch_pm_qos, 100);
+
 	himax_ts_isr_func((struct himax_ts_data *)ptr);
+
+	if (himax_touch_pm_qos_active)
+		pm_qos_update_request(&himax_touch_pm_qos, PM_QOS_DEFAULT_VALUE);
 
 	return IRQ_HANDLED;
 }
@@ -884,6 +895,11 @@ int himax_chip_common_probe(struct i2c_client *client,
 
 	ret = himax_chip_common_init();
 
+	if (!himax_touch_pm_qos_active) {
+		pm_qos_add_request(&himax_touch_pm_qos, PM_QOS_CPU_DMA_LATENCY, PM_QOS_DEFAULT_VALUE);
+		himax_touch_pm_qos_active = true;
+	}
+
 	ts->reboot_notifier.notifier_call = himax_reboot_notifier;
 	register_reboot_notifier(&ts->reboot_notifier);
 
@@ -895,6 +911,11 @@ err_check_functionality_failed:
 
 int himax_chip_common_remove(struct i2c_client *client)
 {
+	if (himax_touch_pm_qos_active) {
+		pm_qos_remove_request(&himax_touch_pm_qos);
+		himax_touch_pm_qos_active = false;
+	}
+
 	himax_chip_common_deinit();
 
 	return 0;

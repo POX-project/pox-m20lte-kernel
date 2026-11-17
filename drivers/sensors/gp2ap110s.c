@@ -1021,7 +1021,7 @@ static void gp2ap_offset_work_func(struct work_struct *work)
 	if(!data->ps_enabled) return;
 	
 	ps_data = gp2ap_get_proximity_adc(data);
-	SENSOR_INFO("offset=%d\n", ps_data);
+	SENSOR_DBG("offset=%d\n", ps_data);
 
 	if (ps_data > 0)
 		data->zero_detect = 0;
