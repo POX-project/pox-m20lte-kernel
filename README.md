@@ -2,7 +2,7 @@
 
 [![GitHub Repo](https://img.shields.io/badge/GitHub-POX--project%2Fpox--m20lte--kernel-181717.svg?logo=github)](https://github.com/POX-project/pox-m20lte-kernel)
 [![Kernel Version](https://img.shields.io/badge/Kernel-Linux%204.4.177-green.svg?logo=linux)](https://github.com/POX-project/pox-m20lte-kernel)
-[![Pox Release](https://img.shields.io/badge/Pox%20Release-v2.1.2-blue.svg)](https://github.com/POX-project/pox-m20lte-kernel)
+[![Pox Release](https://img.shields.io/badge/Pox%20Release-v2.1.3-blue.svg)](https://github.com/POX-project/pox-m20lte-kernel)
 [![Device](https://img.shields.io/badge/Device-Samsung%20Galaxy%20M20%20(m20lte)-orange.svg?logo=samsung)](https://github.com/POX-project/pox-m20lte-kernel)
 [![SoC](https://img.shields.io/badge/SoC-Samsung%20Exynos%207904%20(universal7885)-red.svg)](https://github.com/POX-project/pox-m20lte-kernel)
 [![Solidarity](https://img.shields.io/badge/Stand%20With-Free%20Palestine%20🇵🇸-red?style=flat&colorA=000000&colorB=007A3D)](https://en.wikipedia.org/wiki/State_of_Palestine)
@@ -32,6 +32,7 @@
   - [Version 2.1.0 (Zero-Lag Engine & RAM Management)](#3-version-210-zero-lag-engine-max-charging-speed--modern-ram-management)
   - [Version 2.1.1 (Dynamic Overclock, Sultan Debloat & HMP Migration)](#4-version-211-dynamic-overclock-restoration-devfreq-d-state-fix-sultan-debloat--hmp-zero-lag-migration)
   - [Version 2.1.2 (In-App Zero Lag, HMP Selective Boost & Compositor Affinity)](#5-version-212-in-app-zero-lag-engine-hmp-selective-boost-compositor-affinity--touch-pm-qos)
+  - [Version 2.1.3 (Hardware IRQ Multicore Balancing, Zero-Latency I/O & Scrcpy Native Acceleration)](#6-version-213-hardware-irq-multicore-balancing-zero-latency-io--scrcpy-native-acceleration)
 - [Editions & The Variant Matrix](#editions--the-variant-matrix)
 - [Comprehensive Kernel Addons & Features](#comprehensive-kernel-addons--features)
   - [1. Touchscreen Anti-Ghosting & Noise Filtration Engine](#1-touchscreen-anti-ghosting--noise-filtration-engine)
@@ -141,7 +142,7 @@ The 2.1.1 release addresses deep Exynos 7904 scheduling, governor, and backgroun
 ---
 
 ### 5. Version 2.1.2 (In-App Zero-Lag Engine, HMP Selective Boost, Compositor Affinity & Touch PM QoS)
-> **STATUS: LATEST ACTIVE MAINLINE RELEASE.**
+> **STATUS: PREVIOUS STABLE RELEASE.**
 
 The 2.1.2 release eliminates in-app stutter and UI thread lag across heavy Android 15 workloads:
 * **HMP Selective & Family Boost for Top-App UI Threads**:
@@ -161,6 +162,28 @@ The 2.1.2 release eliminates in-app stutter and UI thread lag across heavy Andro
   * Enforced aggressive low-memory-killer minfree thresholds to ensure physical free RAM remains stable above 250MB, completely eliminating `allocstall` pauses.
 * **Sensor Lock & Log Spam Elimination**:
   * Silenced periodic proximity sensor offset logging in `gp2ap110s.c` to prevent console lock contention.
+
+---
+
+### 6. Version 2.1.3 (Hardware IRQ Multicore Balancing, Zero-Latency I/O & Scrcpy Native Acceleration)
+> **STATUS: CURRENT ACTIVE MAINLINE RELEASE.**
+
+The 2.1.3 release conducts a complete architectural optimization across hardware interrupts, CPU governor responsiveness, flash storage cache locality, memory allocation jitter, and display streaming:
+* **Multicore Hardware IRQ Balancing**:
+  * Rebalanced GIC interrupt affinities off saturated CPU 0: eMMC I/O (IRQ 64) routed to CPU 2, Display VSYNC (IRQ 89) routed to CPU 1, and Mali-G71 GPU (IRQ 45/47) routed to CPU 4. Completely resolves CPU 0 softirq lockup during simultaneous disk I/O, UI compositing, and gaming.
+* **Interactive Governor Instant Boost & I/O-Busy Accounting**:
+  * Configured `io_is_busy = 1` across all governor instances, preventing the kernel from down-throttling CPU frequency during intensive SQLite operations and app launches.
+  * Lowered Big-core `above_hispeed_delay` from 39ms to 19ms (`19000`), ensuring instantaneous frequency escalation to 2.184 GHz on demanding UI tasks.
+* **eMMC Storage Zero-Latency Queue & Strict Core Locality**:
+  * Enforced `rq_affinity = 2` on `/sys/block/mmcblk0/queue` for strict per-CPU completion locality, eliminating cache line bouncing between Little (Cortex-A53) and Big (Cortex-A73) clusters.
+* **Kernel VMstat Jitter Elimination & Low-Memory Allocation Reserve**:
+  * Increased kernel `sysctl_stat_interval` from 1s to 10s (`10 * HZ` in `mm/vmstat.c`), silencing repetitive 1Hz per-CPU timer interrupt wakeups and reducing scheduler jitter.
+  * Reserved 16MB emergency headroom via `vm.min_free_kbytes = 16384` to prevent memory allocation stalls on 3GB physical RAM.
+* **Hardware Video Encoding & Native Scrcpy Screen Mirroring**:
+  * Automated early deployment of `/dev/m2m1shot_scaler1` CSC scaler symlink with `mediacodec:drmrpc` permissions, resolving the `CScalerM2M1SHOT` hardware scaler initialization failure and enabling zero-arg `scrcpy` mirroring at 1080x2340 @ 60 FPS without software encoder fallback.
+* **SurfaceFlinger Unsignaled Latching & Network Fast Open**:
+  * Enabled `debug.sf.latch_unsignaled = 1` and `debug.sf.auto_latch_unsignaled = 1` to reduce frame presentation latency by up to 16ms.
+  * Enabled `net.ipv4.tcp_fastopen = 3` and Westwood TCP congestion control (`CONFIG_DEFAULT_TCP_CONG="westwood"`) for low-latency cellular and Wi-Fi throughput.
 
 ---
 
