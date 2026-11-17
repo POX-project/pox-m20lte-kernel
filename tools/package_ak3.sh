@@ -525,6 +525,7 @@ for p in /sys/devices/system/cpu/cpu0/cpufreq/interactive /sys/devices/system/cp
         echo 19000 > "$p/timer_rate" 2>/dev/null || true
         echo 19000 > "$p/timer_slack" 2>/dev/null || true
         echo 20000 > "$p/min_sample_time" 2>/dev/null || true
+        echo 19000 > "$p/above_hispeed_delay" 2>/dev/null || true
     fi
 done
 [ -f /sys/devices/system/cpu/cpu0/cpufreq/interactive/hispeed_freq ] && echo 1586000 > /sys/devices/system/cpu/cpu0/cpufreq/interactive/hispeed_freq 2>/dev/null || true
@@ -579,13 +580,14 @@ for dm in /sys/devices/platform/17000000.exynos-dm/exynos_dm; do
     fi
 done
 
-# 5. eMMC Flash Storage Zero-Latency Queue
+# 5. eMMC Flash Storage Zero-Latency Queue & Cache Locality
 for blk in /sys/block/mmcblk0/queue; do
     if [ -d "$blk" ]; then
         echo noop > "$blk/scheduler" 2>/dev/null || true
         echo 512 > "$blk/read_ahead_kb" 2>/dev/null || true
         echo 0 > "$blk/iostats" 2>/dev/null || true
         echo 0 > "$blk/add_random" 2>/dev/null || true
+        echo 2 > "$blk/rq_affinity" 2>/dev/null || true
     fi
 done
 
@@ -597,8 +599,21 @@ echo 60 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null || true
 echo 0 > /proc/sys/vm/page-cluster 2>/dev/null || true
 echo 10 > /proc/sys/vm/dirty_ratio 2>/dev/null || true
 echo 5 > /proc/sys/vm/dirty_background_ratio 2>/dev/null || true
+echo 16384 > /proc/sys/vm/min_free_kbytes 2>/dev/null || true
+echo 10 > /proc/sys/vm/stat_interval 2>/dev/null || true
 
-# 7. Pox Core Engine Engagement
+# 7. Hardware Interrupt Multicore Balancing (Distribute off CPU 0)
+echo 04 > /proc/irq/64/smp_affinity 2>/dev/null || true # eMMC to CPU 2
+echo 02 > /proc/irq/89/smp_affinity 2>/dev/null || true # Display VSYNC to CPU 1
+echo 10 > /proc/irq/45/smp_affinity 2>/dev/null || true # Mali GPU to CPU 4
+echo 10 > /proc/irq/47/smp_affinity 2>/dev/null || true # Mali GPU to CPU 4
+
+# 8. SurfaceFlinger & Network Latency Optimizations
+setprop debug.sf.latch_unsignaled 1
+setprop debug.sf.auto_latch_unsignaled 1
+setprop net.ipv4.tcp_fastopen 3
+
+# 9. Pox Core Engine Engagement
 [ -f /proc/perfmgr/gaming_mode ] && echo 2 > /proc/perfmgr/gaming_mode 2>/dev/null || true
 [ -f /sys/kernel/gaming_mode ] && echo 2 > /sys/kernel/gaming_mode 2>/dev/null || true
 [ -f /sys/kernel/kprofiles/kp_mode ] && echo 3 > /sys/kernel/kprofiles/kp_mode 2>/dev/null || true
